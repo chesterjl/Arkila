@@ -7,6 +7,7 @@ import Badge from "@/components/Badge";
 import { Field, ErrorNote } from "@/components/Field";
 import type { Car, VehicleType, FuelType } from "@/lib/types";
 import type { AxiosError } from "axios";
+import toast from "react-hot-toast";
 
 interface ApiErrorBody {
   success: false;
@@ -102,9 +103,7 @@ export default function CarFormModal({
     if (!isEditing) {
       if (!image) return setSaveErr("Please add a photo of the car.");
       if (!registrationImage)
-        return setSaveErr(
-          "Please add the car's Certificate of Registration (CR)."
-        );
+        return setSaveErr("Please add the car's Certificate of Registration (CR).");
     }
 
     setSaving(true);
@@ -123,13 +122,11 @@ export default function CarFormModal({
       if (registrationImage)
         fd.append("registrationImage", registrationImage);
 
-      const endpoint = isEditing
-        ? API_ENDPOINTS.UPDATE_CAR(car!._id)
-        : API_ENDPOINTS.CREATE_CAR;
-
+      const endpoint = isEditing ? API_ENDPOINTS.UPDATE_CAR(car!._id) : API_ENDPOINTS.CREATE_CAR;
       const method = isEditing ? AxiosConfig.put : AxiosConfig.post;
       const { data } = await method(endpoint, fd);
-
+      
+      toast.success(isEditing ? "Updated the car successfully" : "Car submitted for admin review");
       onSaved(data.car);
     } catch (e) {
       const axiosErr = e as AxiosError<ApiErrorBody>;
@@ -149,6 +146,8 @@ export default function CarFormModal({
     setDeleting(true);
     try {
       await AxiosConfig.delete(API_ENDPOINTS.DELETE_CAR(car._id));
+      
+      toast.success("Deleted the car successfully");
       onDeleted(car._id);
     } catch (e) {
       const axiosErr = e as AxiosError<ApiErrorBody>;
@@ -162,14 +161,8 @@ export default function CarFormModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-        <div
-            className="panel max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-        >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="panel max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="text-xl font-bold">

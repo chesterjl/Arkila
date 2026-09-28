@@ -7,6 +7,7 @@ const Car = require('../models/Car');
 const ApiError = require('../utils/ApiError');
 const { protect, authorize } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
+const { CAR_LISTING_STATUS } = require('../config/constants'); 
 
 // Owner: predict demand for one of THEIR OWN cars in a given month.
 // Only the allowed schema fields are forwarded to the ML service.
@@ -61,6 +62,32 @@ router.post('/recommend-cars', asyncHandler(async (req, res) => {
   }
 
   res.status(200).json({ success: true, available: true, recommendations: result.recommendations || [] });
+}));
+
+// Owner: forecast demand for ALL of their approved cars in a given month (one batch call to the ML service).
+router.post('/owner-forecast', protect, authorize('owner'), asyncHandler(async (req, res) => {
+  const month = Number(req.body.month);
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new ApiError(400, 'month must be a number from 1 to 12.');
+
+  const cars = await Car.find({ owner: req.user._id, listingStatus: CAR_LISTING_STATUS.APPROVED });
+  if (cars.length === 0) return res.status(200).json({ success: true, forecasts: [] });
+
+  const result = await MLService.recommendCars({
+    month,
+    cars: cars.map((c) => ({
+      carId: c._id.toString(),
+      vehicleType: c.vehicleType,
+      fuelType: c.fuelType,
+      seats: c.seats,
+      location: c.location,
+      rentalPrice: c.rentalPrice,
+    })),
+  });
+
+  // recommendCars returns null when the ML service is down; surface that instead of showing empty data.
+  if (!result) throw new ApiError(503, 'Demand prediction service is currently unavailable.');
+
+  res.status(200).json({ success: true, forecasts: result.recommendations || [] });
 }));
 
 module.exports = router;

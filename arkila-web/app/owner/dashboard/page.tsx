@@ -7,11 +7,25 @@ import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
 import BarChart from "@/components/BarChart";
 import RequireRole from "@/components/RequireRole";
 import OwnerDemandPrediction from "@/components/OwnerDemandPrediction";
+import { ErrorNote } from "@/components/Field";
 import type { Booking, Car } from "@/lib/types";
-import type { AxiosResponse } from "axios";
+import type { AxiosError, AxiosResponse } from "axios";
 import { peso } from "@/lib/booking";
 
+interface ApiErrorBody {
+  success: false;
+  message: string;
+}
+
 type DemandCategory = "type" | "fuel" | "seats" | "location";
+type DemandLevel = "High" | "Medium" | "Low";
+
+interface Forecast {
+  carId: string;
+  demandLevel: DemandLevel;
+  score: number; // 0-100, from the Gradient Boosting classifier
+  rank: number;
+}
 
 const TABS: [DemandCategory, string][] = [
   ["type", "Vehicle type"],
@@ -20,11 +34,28 @@ const TABS: [DemandCategory, string][] = [
   ["location", "Location"],
 ];
 
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+const GROUP_KEY: Record<DemandCategory, (c: Car) => string> = {
+  type: (c) => c.vehicleType,
+  fuel: (c) => c.fuelType,
+  seats: (c) => `${c.seats} seats`,
+  location: (c) => c.location,
+};
+
 function Dashboard() {
   const [cars, setCars] = useState<Car[]>([]);
   const [reqs, setReqs] = useState<Booking[]>([]);
   const [tab, setTab] = useState<DemandCategory>("type");
   const [loading, setLoading] = useState<boolean>(true);
+
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [forecasts, setForecasts] = useState<Forecast[]>([]);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastErr, setForecastErr] = useState("");
 
   useEffect(() => {
     const fetchData = async () => {
@@ -52,6 +83,50 @@ function Dashboard() {
     fetchData();
   }, []);
 
+  // Only approved listings can be booked, so only those get a forecast.
+  const approvedCars = useMemo(
+    () => cars.filter((c) => c.listingStatus === "approved"),
+    [cars]
+  );
+
+  // Ask the ML service (via the Node backend) to score every approved car for the chosen month.
+  useEffect(() => {
+    if (loading) return;
+    if (approvedCars.length === 0) {
+      setForecasts([]);
+      return;
+    }
+
+    let isMounted = true;
+    setForecastLoading(true);
+    setForecastErr("");
+
+    AxiosConfig.post<{ success: true; forecasts: Forecast[] }>(
+      API_ENDPOINTS.OWNER_FORECAST,
+      { month }
+    )
+      .then(({ data }) => {
+        if (isMounted) setForecasts(data.forecasts || []);
+      })
+      .catch((x) => {
+        if (!isMounted) return;
+        const axiosErr = x as AxiosError<ApiErrorBody>;
+        setForecasts([]);
+        setForecastErr(
+          axiosErr.response?.data?.message ||
+            (x as Error).message ||
+            "Couldn't load demand predictions."
+        );
+      })
+      .finally(() => {
+        if (isMounted) setForecastLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loading, approvedCars.length, month]);
+
   // Compute stats based on schema fields
   const income = reqs
     .filter((b) => b.status === "completed")
@@ -71,65 +146,41 @@ function Dashboard() {
     }, 0);
 
   const stats: [string, string][] = [
-    [
-      "Live Cars",
-      String(cars.filter((c) => c.listingStatus === "approved").length),
-    ],
-    [
-      "Requests to review",
-      String(reqs.filter((b) => b.status === "pending").length),
-    ],
+    ["Live Cars", String(approvedCars.length)],
+    ["Requests to review", String(reqs.filter((b) => b.status === "pending").length)],
     ["Completed revenue", peso(income)],
     ["Pending payments", peso(pendingPayments)],
   ];
 
-  // Dynamic demand forecast using actual Car schema keys
-  const demandForecast = useMemo(() => {
-    const categories: Record<DemandCategory, Record<string, number>> = {
-      type: {},
-      fuel: {},
-      seats: {},
-      location: {},
-    };
+  // Average model demand score (0-100) per group of the owner's own cars.
+  const chartData = useMemo(() => {
+    const byCar = new Map(forecasts.map((f) => [f.carId, f]));
+    const groups: Record<string, { sum: number; n: number }> = {};
 
-    cars.forEach((car) => {
-      const typeKey = car.vehicleType || "Sedan";
-      const fuelKey = car.fuelType || "Gasoline";
-      const seatsKey = car.seats ? `${car.seats} Seats` : "5 Seats";
-      const locKey = car.location || "Metro Manila";
-
-      categories.type[typeKey] = (categories.type[typeKey] || 0) + 1;
-      categories.fuel[fuelKey] = (categories.fuel[fuelKey] || 0) + 1;
-      categories.seats[seatsKey] = (categories.seats[seatsKey] || 0) + 1;
-      categories.location[locKey] = (categories.location[locKey] || 0) + 1;
-    });
-
-    if (Object.keys(categories.type).length === 0) {
-      categories.type = { Sedan: 12, SUV: 18, Van: 7, Hatchback: 5 };
-      categories.fuel = { Gasoline: 22, Diesel: 15, Hybrid: 5 };
-      categories.seats = { "5 Seats": 20, "7 Seats": 14, "10+ Seats": 8 };
-      categories.location = {
-        "Quezon City": 15,
-        Makati: 18,
-        BGC: 12,
-        Pasig: 9,
-      };
+    for (const car of approvedCars) {
+      const f = byCar.get(car._id);
+      if (!f) continue;
+      const key = GROUP_KEY[tab](car);
+      groups[key] = groups[key] || { sum: 0, n: 0 };
+      groups[key].sum += f.score;
+      groups[key].n += 1;
     }
 
-    const applyModelMultiplier = (data: Record<string, number>) => {
-      return Object.entries(data).map(([label, count]) => ({
-        label,
-        value: Math.round(count * 4.2 + Math.floor(Math.random() * 4) + 2),
-      }));
-    };
+    return Object.entries(groups)
+      .map(([label, { sum, n }]) => ({
+        label: n > 1 ? `${label} ×${n}` : label,
+        value: Math.round(sum / n),
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [forecasts, approvedCars, tab]);
 
-    return {
-      type: applyModelMultiplier(categories.type),
-      fuel: applyModelMultiplier(categories.fuel),
-      seats: applyModelMultiplier(categories.seats),
-      location: applyModelMultiplier(categories.location),
-    };
-  }, [cars]);
+  const levelCounts = useMemo(() => {
+    const counts: Record<DemandLevel, number> = { High: 0, Medium: 0, Low: 0 };
+    forecasts.forEach((f) => {
+      counts[f.demandLevel] += 1;
+    });
+    return counts;
+  }, [forecasts]);
 
   return (
     <div className="space-y-8">
@@ -148,16 +199,33 @@ function Dashboard() {
       {/* Per-vehicle demand prediction (Gradient Boosting demand classifier) */}
       {!loading && <OwnerDemandPrediction cars={cars} />}
 
-      {/* Prediction Chart */}
-      <section className="panel">
-        <h2 className="text-lg font-bold">Predicted demand for next 30 days</h2>
-        <p className="mt-1 text-sm text-bay/70">
-          Projected rental demand across vehicle variables based on a Gradient
-          Boosting Model trained on booking activity. Use it to decide what to
-          list and optimize pricing.
-        </p>
+      {/* Demand chart: real model output for the owner's own cars */}
+      <section className="panel space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">
+              Predicted demand for {MONTHS[month - 1]}
+            </h2>
+            <p className="mt-1 text-sm text-bay/70">
+              Each of your approved cars is scored by the Gradient Boosting demand
+              model (0 to 100). Bars show the average score per group.
+            </p>
+          </div>
+          <select
+            className="input w-40"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            aria-label="Forecast month"
+          >
+            {MONTHS.map((m, i) => (
+              <option key={m} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <div role="tablist" className="mt-4 flex flex-wrap gap-1">
+        <div role="tablist" className="flex flex-wrap gap-1">
           {TABS.map(([k, t]) => (
             <button
               key={k}
@@ -173,20 +241,38 @@ function Dashboard() {
           ))}
         </div>
 
-        <div className="mt-5">
-          {loading ? (
-            <p className="text-bay/60">Loading forecast data...</p>
+        <ErrorNote text={forecastErr} />
+
+        <div>
+          {loading || forecastLoading ? (
+            <p className="text-bay/60">Running the demand model...</p>
+          ) : approvedCars.length === 0 ? (
+            <p className="rounded-md bg-mist p-3 text-sm text-bay/70">
+              You don&apos;t have any approved listings yet. Once a car is approved,
+              its predicted demand will appear here.
+            </p>
+          ) : chartData.length === 0 && !forecastErr ? (
+            <p className="text-bay/60">No predictions available.</p>
           ) : (
-            <BarChart data={demandForecast[tab]} />
+            <BarChart data={chartData} max={100} />
           )}
         </div>
 
-        <p className="mt-4 text-xs text-bay/60">
-          Model accuracy: MAE ±1.8 rentals/group · R² = 0.84. High demand expected
-          for family vehicles and city crossovers.
+        {forecasts.length > 0 && (
+          <p className="text-sm text-bay/70">
+            Your {forecasts.length} live {forecasts.length === 1 ? "car is" : "cars are"} predicted as{" "}
+            <strong>{levelCounts.High} high</strong>,{" "}
+            <strong>{levelCounts.Medium} medium</strong>, and{" "}
+            <strong>{levelCounts.Low} low</strong> demand in {MONTHS[month - 1]}.
+          </p>
+        )}
+
+        <p className="text-xs text-bay/60">
+          Predictions come from the Gradient Boosting classifier using vehicle type,
+          fuel type, seats, location, price, and month. They support decision-making
+          and do not guarantee future demand.
         </p>
       </section>
-
     </div>
   );
 }

@@ -1,3 +1,4 @@
+// constant.js
 module.exports = {
   ROLES: { CUSTOMER: 'customer', OWNER: 'owner', ADMIN: 'admin' },
   PUBLIC_ROLES: ['customer', 'owner'],

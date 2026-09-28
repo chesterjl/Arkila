@@ -1,3 +1,4 @@
+// IdDocumentController.js
 const express = require('express');
 const router = express.Router();
 const IdDocumentService = require('../service/IdDocumentService');
@@ -16,10 +17,23 @@ router.post('/', protect, authorize('owner'), upload.array('idImages', 2), async
   })
 );
 
+router.patch('/:id', protect, authorize('owner'), upload.single('idImage'), asyncHandler(async (req, res) => {
+    const id = await IdDocumentService.replaceDocument(req.user, req.params.id, req.file, req.body.idType );
+    res.status(200).json({success: true, message: 'ID updated and submitted for verification.', id});
+  })
+); 
+
 router.delete('/:id', protect, authorize('owner'), asyncHandler(async (req, res) => {
     await IdDocumentService.removeDocument(req.user, req.params.id);
     res.status(200).json({ success: true, message: 'ID removed.' });
   })
 );
+
+
+router.get('/user/:userId', protect, authorize('admin'), asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, ids: await IdDocumentService.getByUserForAdmin(req.params.userId) });
+}));
+
+
 
 module.exports = router;

@@ -19,7 +19,11 @@ dbConnect()
     process.exit(1);
   });
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+app.use(cors({ 
+  origin: process.env.FRONTEND_URL || '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
+ }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

@@ -1,5 +1,4 @@
 // owner/requests/page.tsx
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -62,7 +61,7 @@ function Requests() {
       setDecidingId(null);
     }
   };
-
+  
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Rental requests</h1>

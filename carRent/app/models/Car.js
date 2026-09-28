@@ -16,7 +16,6 @@ const carSchema = new mongoose.Schema(
     isAvailable: { type: Boolean, default: true }, // owner can switch a car off
       
     // Certificate of Registration (CR/OR-CR) proving this specific car belongs to this owner.
-    // Required per car -- an owner with 5 cars uploads 5 of these, one per listing.
     registrationImageUrl: { type: String, required: [true, 'Certificate of Registration image is required'] },
     registrationImagePublicId: { type: String, required: true },
     

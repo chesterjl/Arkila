@@ -8,6 +8,7 @@ import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
 import { Field, ErrorNote } from "@/components/Field";
 import type { Car } from "@/lib/types";
 import type { AxiosError } from "axios";
+import toast from "react-hot-toast";
 
 interface ApiErrorBody {
   success: false;
@@ -43,6 +44,7 @@ export default function CarDetailPage() {
 
   useEffect(() => {
     if (!id) return;
+
     AxiosConfig.get(API_ENDPOINTS.GET_CAR(id))
       .then(({ data }) => setCar(data.car))
       .catch((e) => {
@@ -51,12 +53,11 @@ export default function CarDetailPage() {
       });
   }, [id]);
 
-  const totalDays =
-    form.startDate && form.endDate && form.endDate > form.startDate
+  const totalDays =  form.startDate && form.endDate && form.endDate > form.startDate
       ? Math.max(1, Math.ceil((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / 86400000))
       : 0;
-  const totalPrice = car ? totalDays * car.rentalPrice : 0;
 
+  const totalPrice = car ? totalDays * car.rentalPrice : 0;
   const canBook = car ? car.isAvailable && car.listingStatus === "approved" : false;
 
   const submit = async (e: FormEvent) => {
@@ -76,8 +77,12 @@ export default function CarDetailPage() {
       fd.append("deliveryMethod", form.deliveryMethod);
       if (idImage) fd.append("idImage", idImage);
 
-      await AxiosConfig.post(API_ENDPOINTS.CREATE_BOOKING, fd);
-      router.push("/customer/bookings");
+      const response = await AxiosConfig.post(API_ENDPOINTS.CREATE_BOOKING, fd);
+
+      if (response.status === 201) {
+        toast.success("Rental request submitted")
+        router.push("/customer/bookings");
+      }
     } catch (e) {
       const axiosErr = e as AxiosError<ApiErrorBody>;
       setSubmitErr(axiosErr.response?.data?.message || (e as Error).message || "Failed to submit your booking request.");

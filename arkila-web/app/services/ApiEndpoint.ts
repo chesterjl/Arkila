@@ -11,7 +11,10 @@ export const API_ENDPOINTS = {
   GET_ADMIN_PENDING_OWNERS: "/users/admin/owners/pending",
   APPROVE_OWNER: (id: string) => `/users/admin/owners/${id}/approve`,
   REJECT_OWNER: (id: string) => `/users/admin/owners/${id}/reject`,
-
+  GET_USER_IDS: (id: string) => `/ids/user/${id}`,
+  MY_IDS: "/ids/me",
+  REPLACE_ID: (id: string) => `/ids/${id}`,
+  
   GET_CARS: "/cars",                          
   GET_CAR: (id: string) => `/cars/${id}`,     
   CREATE_CAR: "/cars",                       
@@ -45,8 +48,10 @@ export const API_ENDPOINTS = {
   COMPLETE_BOOKING: (id: string) => `/bookings/${id}/complete`, 
   
   VERIFY_BOOKING: (id: string) => `/payments/${id}/verify-payment`, 
-  CONFIRM_BALANCE_F2F: (customerId: string) => `bookings/${customerId}/check-payment-f2f`,
+  CONFIRM_BALANCE_F2F: (customerId: string) => `bookings/${customerId}/confirm-balance-f2f`,
   // ML demand prediction (proxied through the Express backend -> FastAPI service)
   PREDICT_DEMAND: "/ml/predict-demand",
   RECOMMEND_CARS: "/ml/recommend-cars",
+  OWNER_FORECAST: "/ml/owner-forecast",
+
 };

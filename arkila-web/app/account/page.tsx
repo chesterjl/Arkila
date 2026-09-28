@@ -1,7 +1,7 @@
 // app/account/page.tsx
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import AxiosConfig from "@/app/services/AxiosConfig";
 import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
@@ -56,6 +56,11 @@ function Account() {
   const [wOk, setWOk] = useState(false);
   const [wBusy, setWBusy] = useState(false);
 
+  const [ids, setIds] = useState<any[]>([]);
+  const [idBusy, setIdBusy] = useState(false);
+  const [idErr, setIdErr] = useState("");
+  const [idOk, setIdOk] = useState(false);
+
   const initials = useMemo(
     () =>
       (user?.name || "")
@@ -71,6 +76,39 @@ function Account() {
 
   const isOwner = user.role === "owner";
   const ownerStatus = isOwner ? OWNER_STATUS_COPY[user.ownerStatus || "pending"] : null;
+
+  useEffect(() => {
+    if (!isOwner) return;
+
+    const loadIds = async () => {
+      try {
+        const response = await AxiosConfig.get(API_ENDPOINTS.MY_IDS);
+        setIds(response.data.ids || []);
+      } catch (x) {
+        const axiosErr = x as AxiosError<ApiErrorBody>;
+        setIdErr( axiosErr.response?.data?.message ||  "Failed to load ID documents."
+        );
+      }
+    };
+
+    loadIds();
+  }, [isOwner]);
+
+  useEffect(() => {
+    refreshUser();
+  }, []);
+
+  const refreshUser = async () => {
+    try {
+      const response = await AxiosConfig.get(API_ENDPOINTS.GET_MY_INFO);
+
+      if (response.status === 200) {
+        setUser(response.data.user || response.data);
+      }
+    } catch (x) {
+      console.error("Failed to refresh user:", x);
+    }
+  };
 
   const saveProfile = async (e: FormEvent) => {
     e.preventDefault();
@@ -122,6 +160,38 @@ function Account() {
       setWErr(axiosErr.response?.data?.message || (x as Error).message || "Failed to update password.");
     } finally {
       setWBusy(false);
+    }
+  };
+
+  const updateId = async (
+    id: string,
+    file: File,
+    idType?: string
+  ) => {
+    setIdBusy(true);
+    setIdErr("");
+    setIdOk(false);
+
+    try {
+      const formData = new FormData();
+
+      formData.append("idImage", file);
+
+      if (idType) {
+        formData.append("idType", idType);
+      }
+
+      const response = await AxiosConfig.patch(API_ENDPOINTS.REPLACE_ID(id), formData);
+      setIds((current) => current.map((item) => item._id === id ? response.data.id : item));
+
+      // Backend changes rejected -> pending
+      setUser({...user, ownerStatus: "pending", rejectionReason: undefined,});
+      setIdOk(true);
+    } catch (x) {
+      const axiosErr = x as AxiosError<ApiErrorBody>;
+      setIdErr(axiosErr.response?.data?.message || "Failed to update ID.");
+    } finally {
+      setIdBusy(false);
     }
   };
 
@@ -238,6 +308,78 @@ function Account() {
                   />
                   <p className="mt-1 text-xs text-bay/60">Shown to renters instead of your name on your listings.</p>
                 </Field>
+              )}
+
+              {isOwner && (
+                <div className="panel space-y-4">
+                  <div>
+                    <h2 className="font-semibold">Identity Verification</h2>
+                    <p className="mt-1 text-sm text-bay/60">
+                      Upload a valid government-issued ID for owner verification.
+                    </p>
+                  </div>
+
+                  {user.ownerStatus === "rejected" && (
+                    <div className="rounded-md border border-coral bg-coral/5 p-3">
+                      <p className="font-semibold text-coral">
+                        Your verification was rejected.
+                      </p>
+
+                      {user.rejectionReason && (
+                        <p className="mt-1 text-sm text-bay/70">
+                          Reason: {user.rejectionReason}
+                        </p>
+                      )}
+
+                      <p className="mt-2 text-sm text-bay/70">
+                        Please replace your ID below and submit it for verification again.
+                      </p>
+                    </div>
+                  )}
+
+                  {ids.map((id) => (
+                    <div key={id._id} className="rounded-md border border-bay/10 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-medium">
+                            {id.idType || "Identification Document"}
+                          </p>
+                          <p className="text-sm text-bay/60">
+                            Status: {id.status || "pending"}
+                          </p>
+                        </div>
+
+                        <label className="btn btn-secondary cursor-pointer">
+                          {idBusy ? "Uploading..." : "Replace ID"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={idBusy}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              updateId(id._id, file, id.idType);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {id.imageUrl && (
+                        <img src={id.imageUrl} alt="Uploaded identification document" className="mt-4 max-h-64 rounded-md border object-contain"/>
+                      )}
+                    </div>
+                  ))}
+
+                  <ErrorNote text={idErr} />
+
+                  {idOk && (
+                    <p className="text-sm text-teal">
+                      ID updated successfully. Your verification has been submitted for admin review.
+                    </p>
+                  )}
+                </div>
               )}
 
               <ErrorNote text={pErr} />

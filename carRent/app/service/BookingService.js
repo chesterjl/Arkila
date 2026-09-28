@@ -1,3 +1,4 @@
+// BookingService.js
 const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const Car = require('../models/Car');

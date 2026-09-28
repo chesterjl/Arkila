@@ -180,3 +180,8 @@ export interface PaymentSchema {
   invoiceUrl?: string;
   paidAt?: string;
 }
+
+export interface Point {
+  label: string;
+  value: number;
+}

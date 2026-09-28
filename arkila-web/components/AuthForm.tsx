@@ -1,5 +1,5 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -16,11 +16,80 @@ interface ApiErrorBody {
   message: string;
 }
 
+const ID_TYPES = [
+  "Drivers License",
+  "Passport",
+  "SSS / UMID",
+  "Postal ID",
+  "Voters ID",
+  "National ID",
+];
+
+// One upload slot = one file input + preview + remove button.
+// Two of these are used so the owner never has to multi-select in a file dialog.
+function IdSlot({
+  label,
+  file,
+  onChange,
+  type,
+  onTypeChange,
+}: {
+  label: string;
+  file: File | null;
+  onChange: (f: File | null) => void;
+  type: string;
+  onTypeChange: (t: string) => void;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <Field label={label}>
+      <div className="space-y-2">
+        <select className="input" value={type} onChange={(e) => onTypeChange(e.target.value)}>
+          {ID_TYPES.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        {preview && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={preview} alt={label} className="h-24 w-full rounded border object-cover" />
+        )}
+        <input
+          // key resets the input when the file is removed
+          key={file ? file.name : "empty"}
+          type="file"
+          accept="image/*"
+          className="input"
+          onChange={(e) => onChange(e.target.files?.[0] || null)}
+        />
+        {file && (
+          <button type="button" className="text-xs font-semibold text-coral underline" onClick={() => onChange(null)}>
+            Remove
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const { login } = useAuth();
   const [v, setV] = useState({ name: "", email: "", password: "", phone: "", address: "", role: "customer" as LocalRole });
-  const [idFiles, setIdFiles] = useState<File[]>([]);
+  const [type1, setType1] = useState(ID_TYPES[0]);
+  const [type2, setType2] = useState(ID_TYPES[1]);
+  const [id1, setId1] = useState<File | null>(null);
+  const [id2, setId2] = useState<File | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const isLogin = mode === "login";
@@ -30,8 +99,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     e.preventDefault();
     setErr("");
 
+    // Keep each file paired with its own type, skipping empty slots
+    const ids = [
+      { file: id1, type: type1 },
+      { file: id2, type: type2 },
+    ].filter((i): i is { file: File; type: string } => i.file !== null);
+
     if (!isLogin && v.password.length < 8) return setErr("Use a password with at least 8 characters.");
-    if (!isLogin && isOwner && idFiles.length === 0) {
+    if (!isLogin && isOwner && ids.length === 0) {
       return setErr("Please upload at least one government ID (max 2) so we can verify you as a car owner.");
     }
 
@@ -39,6 +114,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     try {
       if (isLogin) {
         await login(v.email, v.password);
+        toast.success("Logged in successfully!");
         return;
       }
 
@@ -49,11 +125,18 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       form.append("phone", v.phone);
       form.append("address", v.address);
       form.append("role", v.role);
-      if (isOwner) idFiles.forEach((f) => form.append("idImages", f));
+      if (isOwner) {
+        // Same order for files and types: idTypes[i] describes idImages[i]
+        ids.forEach((i) => {
+          form.append("idImages", i.file);
+          form.append("idTypes", i.type);
+        });
+      }
 
       const response: AxiosResponse = await AxiosConfig.post(API_ENDPOINTS.REGISTER, form);
 
       if (response.status === 201) {
+        toast.success("Registration successful! Please log in to continue.");
         router.push("/login");
       }
     } catch (x) {
@@ -102,18 +185,13 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             </div>
           </fieldset>
           {isOwner && (
-            <Field label="Government ID (1-2 images)">
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="input"
-                onChange={(e) => setIdFiles(Array.from(e.target.files || []).slice(0, 2))}
-              />
-              <p className="mt-1 text-xs text-bay/70">
-                An admin verifies this before your listings go live. You can add a second ID later from your account page.
+            <div className="space-y-3 rounded-md border border-bay/10 bg-mist p-3">
+              <IdSlot label="Government ID 1 (required)" file={id1} onChange={setId1} type={type1} onTypeChange={setType1} />
+              <IdSlot label="Government ID 2 (optional)" file={id2} onChange={setId2} type={type2} onTypeChange={setType2} />
+              <p className="text-xs text-bay/70">
+                Upload 1 or 2 IDs. An admin verifies them before your listings go live.
               </p>
-            </Field>
+            </div>
           )}
         </>
       )}

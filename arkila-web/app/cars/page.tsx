@@ -31,14 +31,22 @@ const today = () => new Date().toISOString().split("T")[0];
 
 function Browse() {
   const sp = useSearchParams();
-  const [f, setF] = useState({
-    name: sp.get("name") ?? "",
+  const EMPTY_FILTERS = {
+    name: "",
     type: "",
     fuel: "",
     seats: "",
-    location: sp.get("location") ?? "",
+    location: "",
     maxPrice: "",
+  };
+  const [f, setF] = useState({
+    ...EMPTY_FILTERS,
+    name: sp.get("name") ?? "",
+    location: sp.get("location") ?? "",
   });
+  const hasFilters = Object.values(f).some((v) => v !== "");
+  const resetFilters = () => setF(EMPTY_FILTERS);
+
 
   const [cars, setCars] = useState<Car[] | null>(null);
   const [err, setErr] = useState("");
@@ -208,6 +216,14 @@ function Browse() {
             onChange={set("maxPrice")}
           />
         </Field>
+        <button
+          type="button"
+          className="btn btn-ghost w-full"
+          disabled={!hasFilters}
+          onClick={resetFilters}
+        >
+          Reset filters
+        </button>
       </aside>
 
       <section aria-live="polite">

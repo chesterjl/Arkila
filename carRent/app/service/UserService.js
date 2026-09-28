@@ -1,3 +1,4 @@
+// UserService.js
 const User = require('../models/User');
 const IdDocumentService = require('./IdDocumentService');
 const ApiError = require('../utils/ApiError');
@@ -7,7 +8,7 @@ const { generateToken } = require('../utils/JwtUtil');
 const authResponse = (user) => ({ token: generateToken(user), expiresIn: process.env.JWT_EXPIRES_IN || '1d', user });
 
 const register = async (body, files) => {
-  const { name, email, password, phone, address, brandName, idType } = body;
+  const { name, email, password, phone, address, brandName, idType, idTypes } = body;
   const role = body.role || ROLES.CUSTOMER;
 
   if (!PUBLIC_ROLES.includes(role)) throw new ApiError(400, 'Role must be "customer" or "owner".');
@@ -32,7 +33,7 @@ const register = async (body, files) => {
 
   if (role === ROLES.OWNER) {
     try {
-      await IdDocumentService.addDocuments(user, idFiles, idType);
+      await IdDocumentService.addDocuments(user, idFiles, idTypes ?? idType);
     } catch (err) {
       await User.findByIdAndDelete(user._id);
       throw err;
@@ -50,7 +51,7 @@ const login = async ({ email, password }) => {
 };
 
 const updateInfo = async (user, body) => {
-  const { name, phone, email, address, brandName } = body;
+  const { name, email, password, phone, address, brandName, idType, idTypes } = body;
 
   if (
     name === undefined &&
@@ -97,8 +98,6 @@ const changePassword = async (reqUser, body) => {
   await user.save();
   return true;
 };
-
-// ADMIN SERVICES
 
 const getAllUsers = async (queryRole) => {
   const filter = {};

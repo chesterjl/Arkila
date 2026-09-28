@@ -1,3 +1,4 @@
+// IdDocument.js
 const mongoose = require('mongoose');
 
 // Verification record: one uploaded ID image (Cloudinary).

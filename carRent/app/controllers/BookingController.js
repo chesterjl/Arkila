@@ -1,3 +1,4 @@
+// BookingController.js
 const express = require('express');
 const router = express.Router();
 const BookingService = require('../service/BookingService');
