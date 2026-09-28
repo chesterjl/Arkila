@@ -39,7 +39,6 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     try {
       if (isLogin) {
         await login(v.email, v.password);
-        toast.success("Logged in successfully!");
         return;
       }
 
@@ -55,14 +54,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       const response: AxiosResponse = await AxiosConfig.post(API_ENDPOINTS.REGISTER, form);
 
       if (response.status === 201) {
-        toast.success("Registration successful! Please log in to continue.");
         router.push("/login");
       }
     } catch (x) {
       const axiosErr = x as AxiosError<ApiErrorBody>;
       const message = axiosErr.response?.data?.message || (x as Error).message || "Something went wrong.";
       setErr(message);
-      toast.error(message);
     } finally {
       setBusy(false);
     }

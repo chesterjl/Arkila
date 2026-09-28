@@ -33,4 +33,15 @@ module.exports = {
   },
 
   BLOCKING_STATUSES: ['approved', 'confirmed', 'ongoing', 'returned'],
+    // keep BLOCKING_STATUSES as is (committed bookings) and add:
+  ACTIVE_BOOKING_STATUSES: ['pending', 'approved', 'confirmed', 'ongoing', 'returned'], // anything that holds a car
+
+  BOOKING_LIMITS: {
+    MAX_DAYS: 30,                 // longest single rental
+    MAX_ADVANCE_DAYS: 180,        // how far ahead a rental can start
+    MAX_PENDING_PER_CUSTOMER: 3,  // open requests per customer
+    NOTE_MAX: 500,                // max length for notes/reasons
+  },  
+
+  ID_TYPES: ['Drivers License', 'Passport', 'SSID / UMID', 'Postal ID', 'Voters ID', 'National ID'],
 };  

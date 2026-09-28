@@ -1,4 +1,4 @@
-export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://stucco-epileptic-gumminess.ngrok-free.dev";
 
 export const API_ENDPOINTS = {
   REGISTER: "/users/register",                 
@@ -43,7 +43,10 @@ export const API_ENDPOINTS = {
   PICKUP_BOOKING: (id: string) => `/bookings/${id}/pickup`, 
   RETURN_BOOKING: (id: string) => `/bookings/${id}/return`,  
   COMPLETE_BOOKING: (id: string) => `/bookings/${id}/complete`, 
-  CONFIRM_BALANCE_F2F: (id: string) => `/bookings/${id}/confirm-balance-f2f`,
+  
   VERIFY_BOOKING: (id: string) => `/payments/${id}/verify-payment`, 
-
+  CONFIRM_BALANCE_F2F: (customerId: string) => `bookings/${customerId}/check-payment-f2f`,
+  // ML demand prediction (proxied through the Express backend -> FastAPI service)
+  PREDICT_DEMAND: "/ml/predict-demand",
+  RECOMMEND_CARS: "/ml/recommend-cars",
 };

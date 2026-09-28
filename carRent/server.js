@@ -30,6 +30,7 @@ app.use('/ids/', IdDocumentRoutes);
 app.use('/cars/', CarRoutes);
 app.use('/bookings/', BookingRoutes);
 app.use('/payments/', PaymentRoutes);
+app.use('/ml', require('./app/controllers/MLController'));
 
 app.use(notFound);
 app.use(errorHandler);

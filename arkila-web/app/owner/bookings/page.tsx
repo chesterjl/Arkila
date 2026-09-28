@@ -19,16 +19,17 @@ interface ApiErrorBody {
   message: string;
 }
 
-type Tab = "confirmed" | "ongoing" | "returned" | "completed" | "cancelled" | "rejected" | "all";
+type Tab = "pending" | "confirmed" | "ongoing" | "returned" | "completed" | "cancelled" | "rejected" | "all";
 
 const TABS: [Tab, string][] = [
+  ["all", "All"],
+  ["pending", "Pending"],
   ["confirmed", "Confirmed"],
   ["ongoing", "Ongoing"],
   ["returned", "Returned"],
   ["completed", "Completed"],
   ["cancelled", "Cancelled"],
-  ["rejected", "Rejected"],
-  ["all", "All"],
+  ["rejected", "Rejected"]
 ];
 
 const DELIVERY_LABEL: Record<DeliveryMethod, string> = {
@@ -53,7 +54,7 @@ const legInstruction = (method: DeliveryMethod, leg: "pickup" | "return") => {
 const paymentMethod = (payment?: { method?: string }) => payment?.method;
 
 function OwnerBookings() {
-  const [tab, setTab] = useState<Tab>("confirmed");
+  const [tab, setTab] = useState<Tab>("all");
   const [bookings, setBookings] = useState<Booking[] | null>(null);
   const [viewing, setViewing] = useState<Booking | null>(null);
   const [loggingReturnId, setLoggingReturnId] = useState<string | null>(null);
