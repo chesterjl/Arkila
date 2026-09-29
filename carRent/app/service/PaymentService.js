@@ -1,45 +1,57 @@
+// PaymentService.js
 const axios = require('axios');
 const Booking = require('../models/Booking');
 const Car = require('../models/Car');
+const PayoutService = require('./PayoutService');
 const ApiError = require('../utils/ApiError');
 const { BOOKING_STATUS } = require('../config/constants');
 
-// Helper to extract payment partition
 const getPart = (booking, type) => (type === 'down' ? booking.downPayment : booking.balancePayment);
 
-// Shared method: marks a payment as paid and progresses booking status
 const markPaid = async (booking, type) => {
   const payment = getPart(booking, type);
-  if (payment.status === 'paid') return booking; // Prevent double updates
+
+  // Already paid. Retry payout only if the booking is already completed.
+  if (payment.status === 'paid') {
+    if (booking.status === BOOKING_STATUS.COMPLETED) {
+      return (await PayoutService.releaseOwnerPayout(booking)) || booking;
+    }
+    return booking;
+  }
 
   payment.status = 'paid';
   payment.paidAt = new Date();
 
-  // Progress status from APPROVED -> CONFIRMED upon downpayment receipt
   if (type === 'down' && booking.status === BOOKING_STATUS.APPROVED) {
     booking.status = BOOKING_STATUS.CONFIRMED;
-    // The car is now committed to this rental, so take it off the marketplace.
-    // Completion (see BookingService.complete) intentionally does NOT flip
-    // this back to true -- the owner re-lists it manually once they've had a
-    // chance to clean/inspect it (CarService.updateCar, via the owner's car list UI).
+
+    // The car is now committed to this rental.
     await Car.findByIdAndUpdate(booking.car, { isAvailable: false });
   }
 
-  // Balance settled while the car is back with the owner -> the rental is done.
+  // BALANCE
+  /*
+    IMPORTANT:
+    The customer must first decide whether to:
+      1. Leave a review
+      2. Skip the review
+    Therefore the booking stays visible to the customer through ACTIVE_BOOKING_STATUSES.
+  */
   if (type === 'balance' && booking.status === BOOKING_STATUS.RETURNED) {
-    booking.status = BOOKING_STATUS.COMPLETED;
+    booking.status = BOOKING_STATUS.REVIEW_PENDING;
   }
 
   await booking.save();
+
+  // Payout is intentionally NOT released here. The payout is released only after the customer chooses "Skip review" or submits their review.
   return booking;
 };
 
-// XENDIT INTEGRATION: Create Invoice
+// CREATE XENDIT INVOICE
 const createInvoice = async (booking, customer, type) => {
   const payment = getPart(booking, type);
 
-  // Reuse existing pending invoice URL if already generated (and the customer
-  // hasn't since switched to face-to-face for this payment).
+  // Reuse existing pending invoice.
   if (payment.status === 'pending' && payment.invoiceUrl && payment.method !== 'f2f') {
     return { invoiceUrl: payment.invoiceUrl, amount: payment.amount };
   }
@@ -53,7 +65,6 @@ const createInvoice = async (booking, customer, type) => {
         currency: process.env.XENDIT_CURRENCY || 'PHP',
         payer_email: customer.email,
         description: `CarRent ${type === 'down' ? 'downpayment' : 'balance'} for booking ${booking._id}`,
-        // "type" is included so the frontend knows which payment to verify once it lands back here.
         success_redirect_url: `${process.env.FRONTEND_URL}/customer/bookings?payment=success&bookingId=${booking._id}&type=${type}`,
         failure_redirect_url: `${process.env.FRONTEND_URL}/customer/bookings?payment=failed&bookingId=${booking._id}&type=${type}`,
       },
@@ -71,74 +82,79 @@ const createInvoice = async (booking, customer, type) => {
     payment.invoiceId = data.id;
     payment.invoiceUrl = data.invoice_url;
     payment.status = 'pending';
+
     await booking.save();
 
     return { invoiceUrl: data.invoice_url, amount: payment.amount };
   } catch (err) {
     if (err.isAxiosError) {
-      throw new ApiError(
-        502,
-        `Xendit API Error: ${err.response?.data?.message || err.message}`
-      );
+      throw new ApiError(502, `Xendit API Error: ${err.response?.data?.message || err.message}`);
     }
     throw err;
   }
 };
 
-// Customer chose to pay face-to-face in cash instead of online. No Xendit
-// invoice is created here -- this just records the customer's choice so the
-// owner knows cash is coming, and the owner later confirms receipt via confirmF2F.
+// REQUEST F2F PAYMENT
 const requestF2F = async (booking, type) => {
   const payment = getPart(booking, type);
+
   if (payment.status === 'paid') {
     return { alreadyPaid: true, amount: payment.amount };
   }
 
   payment.method = 'f2f';
   payment.status = 'pending';
+
   await booking.save();
 
   return { method: 'f2f', amount: payment.amount };
 };
 
-// Owner confirms the cash amount actually received for a face-to-face payment.
+// CONFIRM F2F PAYMENT
 const confirmF2F = async (booking, type, amountReceived) => {
   const payment = getPart(booking, type);
-  if (payment.status === 'paid') return booking;
+
+  if (payment.status === 'paid') {
+    return booking;
+  }
 
   payment.method = 'f2f';
   payment.amountReceived = amountReceived;
+
+  // RETURNED -> REVIEW_PENDING for balance payments
   await markPaid(booking, type);
+
   return booking;
 };
 
-// Verify status directly from Xendit API
+// VERIFY XENDIT INVOICE
 const verifyInvoice = async (bookingId, type = 'down') => {
   const booking = await Booking.findById(bookingId);
-  if (!booking) throw new ApiError(404, 'Booking not found');
+
+  if (!booking) {
+    throw new ApiError(404, 'Booking not found');
+  }
 
   const payment = getPart(booking, type);
 
-  // If already paid, return early
-  if (payment.status === 'paid') return booking;
+  if (payment.status === 'paid') {
+    return booking;
+  }
 
   if (!payment.invoiceId) {
     throw new ApiError(400, 'No invoice found for this payment.');
   }
 
-  // Fetch status directly from Xendit
   try {
-    const response = await axios.get(
-      `https://api.xendit.co/v2/invoices/${payment.invoiceId}`,
-      {
-        auth: {
-          username: process.env.XENDIT_SECRET_KEY,
-          password: '',
-        },
-      }
-    );
+    const response = await axios.get(`https://api.xendit.co/v2/invoices/${payment.invoiceId}`, {
+      auth: {
+        username: process.env.XENDIT_SECRET_KEY,
+        password: '',
+      },
+    });
 
     const invoice = response.data;
+
     if (invoice.status === 'PAID' || invoice.status === 'SETTLED') {
       await markPaid(booking, type);
     } else if (invoice.status === 'EXPIRED') {
@@ -155,18 +171,19 @@ const verifyInvoice = async (bookingId, type = 'down') => {
   }
 };
 
-// Handles Webhook / Callback POST requests dispatched by Xendit
+// XENDIT WEBHOOK
 const handleWebhook = async (callbackToken, payload) => {
   if (!callbackToken || callbackToken !== process.env.XENDIT_CALLBACK_TOKEN) {
     throw new ApiError(401, 'Invalid Xendit callback token.');
   }
 
   const { id, status } = payload;
+
   const booking = await Booking.findOne({
     $or: [{ 'downPayment.invoiceId': id }, { 'balancePayment.invoiceId': id }],
   });
 
-  if (!booking) return; // Ignore unknown/unrelated invoices
+  if (!booking) return;
 
   const type = booking.downPayment.invoiceId === id ? 'down' : 'balance';
 
@@ -178,7 +195,6 @@ const handleWebhook = async (callbackToken, payload) => {
   }
 };
 
-// Export all methods together at the bottom of the file
 module.exports = {
   markPaid,
   createInvoice,

@@ -79,11 +79,6 @@ AxiosConfig.interceptors.response.use(
         }
       }
 
-      // 403 = authenticated but wrong role (the `authorize` middleware). Don't log the person out for this.
-      else if (status === 403) {
-        console.warn("Forbidden:", message);
-      }
-
       // 500 = unexpected server error
       else if (status === 500) {
         console.error("Server error:", message);

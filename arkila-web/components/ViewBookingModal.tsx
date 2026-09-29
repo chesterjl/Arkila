@@ -1,5 +1,5 @@
 import type { Booking, Car, IdDocument, User } from "@/lib/types";
-import { fmtDate, peso } from "@/lib/booking";
+import { fmtDate, peso, feeOf, payoutOf, DEFAULT_SERVICE_FEE_PCT } from "@/lib/booking";
 import Badge from "@/components/Badge";
 
 interface ViewBookingModalProps {
@@ -84,6 +84,17 @@ export default function ViewBookingModal({ booking, onClose, onApprove, onReject
               <p className="font-bold">{peso(booking.totalPrice)}</p>
             </div>
 
+            <div className="space-y-1 text-xs text-bay/60">
+              <div className="flex justify-between">
+                <span>Platform service fee ({booking.serviceFeePercent ?? DEFAULT_SERVICE_FEE_PCT}%)</span>
+                <span>{peso(feeOf(booking))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Owner payout</span>
+                <span>{peso(payoutOf(booking))}</span>
+              </div>
+            </div>
+
             <div className="divide-y divide-bay/10">
               <div className="space-y-1.5 pb-3">
                 <div className="flex items-center justify-between text-sm">
@@ -110,11 +121,10 @@ export default function ViewBookingModal({ booking, onClose, onApprove, onReject
           </div>
 
           <div className="space-y-2">
-            <p className="label">Renter&apos;s ID</p>
+            <p className="label">Renter&apos;s Government ID</p>
             {idDoc?.imageUrl ? (
               <>
                 <img src={idDoc.imageUrl} alt="Renter ID" className="max-h-64 w-full rounded-md border object-contain" />
-                <p className="text-xs text-bay/60">{idDoc.idType} · status: {idDoc.status}</p>
               </>
             ) : (
               <p className="text-sm text-coral">No ID on file yet.</p>

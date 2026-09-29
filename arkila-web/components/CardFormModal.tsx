@@ -4,6 +4,7 @@ import { useState, useEffect, type FormEvent } from "react";
 import AxiosConfig from "@/app/services/AxiosConfig";
 import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
 import Badge from "@/components/Badge";
+import { feeSplit, peso, DEFAULT_SERVICE_FEE_PCT } from "@/lib/booking";
 import { Field, ErrorNote } from "@/components/Field";
 import type { Car, VehicleType, FuelType } from "@/lib/types";
 import type { AxiosError } from "axios";
@@ -79,6 +80,8 @@ export default function CarFormModal({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const canDelete = car?.isAvailable;
+  const priceNum = Number(form.rentalPrice);
+  const split = priceNum > 0 ? feeSplit(priceNum) : null;
 
   useEffect(() => {
     if (image) {
@@ -245,6 +248,22 @@ export default function CarFormModal({
               />
             </Field>
           </div>
+
+          {split && (
+            <div className="space-y-1 rounded-md border border-bay/10 bg-mist p-3 text-sm">
+              <div className="flex justify-between text-bay/70">
+                <span>Platform service fee ({DEFAULT_SERVICE_FEE_PCT}%)</span>
+                <span>{peso(split.fee)} / day</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Total Rent Price:</span>
+                <span>{peso(split.ownerShare)} / day</span>
+              </div>
+              <p className="text-xs text-bay/60">
+                Renters pay the listed price and see this fee too. It is deducted from each completed rental automatically.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Vehicle type">

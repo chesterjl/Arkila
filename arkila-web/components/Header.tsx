@@ -23,6 +23,7 @@ const NAV: Record<Role, [string, string][]> = {
     ["/admin/dashboard", "Dashboard"],
     ["/admin/cars", "Car listings"],
     ["/admin/owner", "Owner verification"],
+    ["/admin/users", "Accounts"],
   ],
 };
 

@@ -25,14 +25,6 @@ const peso = (n?: number) =>
     ? `₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`
     : "₱0.00";
 
-const ID_TYPES = [
-  "Drivers License",
-  "Passport",
-  "SSID / UMID",
-  "Postal ID",
-  "Voters ID",
-  "National ID",
-];
 
 const DELIVERY_METHODS = [
   { label: "Self Pickup & Self Return", value: "self_pickup_self_return" },
@@ -50,7 +42,6 @@ export default function CreateBookingModal({
   const [formData, setFormData] = useState({
     startDate: "",
     endDate: "",
-    idType: ID_TYPES[0],
     deliveryMethod: "self_pickup_self_return",
   });
   const [file, setFile] = useState<File | null>(null);
@@ -88,7 +79,6 @@ export default function CreateBookingModal({
       data.append("carId", car._id);
       data.append("startDate", formData.startDate);
       data.append("endDate", formData.endDate);
-      data.append("idType", formData.idType);
       data.append("deliveryMethod", formData.deliveryMethod);
       if (file) {
         data.append("idImage", file);
@@ -175,23 +165,7 @@ export default function CreateBookingModal({
               ))}
             </select>
           </Field>
-
-          <Field label="ID Document Type">
-            <select
-              className="input w-full"
-              value={formData.idType}
-              onChange={(e) =>
-                setFormData({ ...formData, idType: e.target.value })
-              }
-            >
-              {ID_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </Field>
-
+  
           <Field label="Upload ID Document (Image)">
             <input
               type="file"

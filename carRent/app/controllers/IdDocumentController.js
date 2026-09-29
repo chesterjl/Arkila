@@ -11,21 +11,21 @@ router.get('/me', protect, asyncHandler(async (req, res) => {
   })
 );
 
-router.post('/', protect, authorize('owner'), upload.array('idImages', 2), asyncHandler(async (req, res) => {
-    const ids = await IdDocumentService.addDocuments(req.user, req.files, req.body.idType);
+router.post('/',  protect, authorize('owner', 'customer'), upload.array('idImages', 2), asyncHandler(async (req, res) => {
+    const ids = await IdDocumentService.addDocuments(req.user, req.files);
     res.status(201).json({ success: true, ids });
   })
 );
 
-router.patch('/:id', protect, authorize('owner'), upload.single('idImage'), asyncHandler(async (req, res) => {
-    const id = await IdDocumentService.replaceDocument(req.user, req.params.id, req.file, req.body.idType );
-    res.status(200).json({success: true, message: 'ID updated and submitted for verification.', id});
+router.patch('/:id', protect, authorize('owner', 'customer'), upload.single('idImage'), asyncHandler(async (req, res) => {
+    const id = await IdDocumentService.replaceDocument(req.user, req.params.id, req.file);
+    res.status(200).json({ success: true, message: 'ID updated successfully.', id});
   })
-); 
+);
 
-router.delete('/:id', protect, authorize('owner'), asyncHandler(async (req, res) => {
+router.delete( '/:id', protect, authorize('owner', 'customer'), asyncHandler(async (req, res) => {
     await IdDocumentService.removeDocument(req.user, req.params.id);
-    res.status(200).json({ success: true, message: 'ID removed.' });
+    res.status(200).json({ success: true, message: 'ID removed.'});
   })
 );
 

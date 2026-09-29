@@ -16,29 +16,15 @@ interface ApiErrorBody {
   message: string;
 }
 
-const ID_TYPES = [
-  "Drivers License",
-  "Passport",
-  "SSS / UMID",
-  "Postal ID",
-  "Voters ID",
-  "National ID",
-];
-
 // One upload slot = one file input + preview + remove button.
-// Two of these are used so the owner never has to multi-select in a file dialog.
 function IdSlot({
   label,
   file,
   onChange,
-  type,
-  onTypeChange,
 }: {
   label: string;
   file: File | null;
   onChange: (f: File | null) => void;
-  type: string;
-  onTypeChange: (t: string) => void;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
 
@@ -55,11 +41,6 @@ function IdSlot({
   return (
     <Field label={label}>
       <div className="space-y-2">
-        <select className="input" value={type} onChange={(e) => onTypeChange(e.target.value)}>
-          {ID_TYPES.map((t) => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
         {preview && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={preview} alt={label} className="h-24 w-full rounded border object-cover" />
@@ -86,8 +67,6 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const { login } = useAuth();
   const [v, setV] = useState({ name: "", email: "", password: "", phone: "", address: "", role: "customer" as LocalRole });
-  const [type1, setType1] = useState(ID_TYPES[0]);
-  const [type2, setType2] = useState(ID_TYPES[1]);
   const [id1, setId1] = useState<File | null>(null);
   const [id2, setId2] = useState<File | null>(null);
   const [err, setErr] = useState("");
@@ -99,11 +78,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
     e.preventDefault();
     setErr("");
 
-    // Keep each file paired with its own type, skipping empty slots
-    const ids = [
-      { file: id1, type: type1 },
-      { file: id2, type: type2 },
-    ].filter((i): i is { file: File; type: string } => i.file !== null);
+    const ids = [id1, id2].filter((f): f is File => f !== null);
 
     if (!isLogin && v.password.length < 8) return setErr("Use a password with at least 8 characters.");
     if (!isLogin && isOwner && ids.length === 0) {
@@ -125,13 +100,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       form.append("phone", v.phone);
       form.append("address", v.address);
       form.append("role", v.role);
-      if (isOwner) {
-        // Same order for files and types: idTypes[i] describes idImages[i]
-        ids.forEach((i) => {
-          form.append("idImages", i.file);
-          form.append("idTypes", i.type);
-        });
-      }
+      if (isOwner) ids.forEach((f) => form.append("idImages", f));
 
       const response: AxiosResponse = await AxiosConfig.post(API_ENDPOINTS.REGISTER, form);
 
@@ -157,13 +126,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             <input className="input" required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />
           </Field>
           <Field label="Phone number">
-            <input
-              type="tel"
-              className="input"
-              required
-              value={v.phone}
-              onChange={(e) => setV({ ...v, phone: e.target.value })}
-            />
+            <input type="tel" className="input" required value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} />
           </Field>
           <Field label="Address">
             <input
@@ -186,8 +149,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </fieldset>
           {isOwner && (
             <div className="space-y-3 rounded-md border border-bay/10 bg-mist p-3">
-              <IdSlot label="Government ID 1 (required)" file={id1} onChange={setId1} type={type1} onTypeChange={setType1} />
-              <IdSlot label="Government ID 2 (optional)" file={id2} onChange={setId2} type={type2} onTypeChange={setType2} />
+              <IdSlot label="Government ID 1 (required)" file={id1} onChange={setId1} />
+              <IdSlot label="Government ID 2 (optional)" file={id2} onChange={setId2} />
               <p className="text-xs text-bay/70">
                 Upload 1 or 2 IDs. An admin verifies them before your listings go live.
               </p>

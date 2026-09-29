@@ -6,10 +6,8 @@ const mongoose = require('mongoose');
 const idDocumentSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    idType: { type: String, trim: true, default: 'Government ID' }, // e.g. "Driver's License", "Passport"
     imageUrl: { type: String, required: true },
     imagePublicId: { type: String, required: true }, // Cloudinary id
-    status: { type: String, enum: ['pending', 'verified', 'rejected'], default: 'pending' },
   },
   { timestamps: true }
 );

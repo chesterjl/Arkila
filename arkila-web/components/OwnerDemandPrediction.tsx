@@ -99,7 +99,6 @@ export default function OwnerDemandPrediction({ cars }: { cars: Car[] }) {
         </p>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
-          {/* Controls */}
           <div className="space-y-3 rounded-md bg-mist p-4">
             <Field label="Car">
               <select
@@ -142,7 +141,6 @@ export default function OwnerDemandPrediction({ cars }: { cars: Car[] }) {
             <ErrorNote text={err} />
           </div>
 
-          {/* Result */}
           {result && selectedCar ? (
             <div className="space-y-4 rounded-md border border-bay/10 p-4">
               <p className="text-sm text-bay/70">
@@ -154,7 +152,6 @@ export default function OwnerDemandPrediction({ cars }: { cars: Car[] }) {
                 {Math.round(result.confidence * 100)}% confidence.
               </p>
 
-              {/* Segmented gauge: the predicted level lights up, the rest stay dim */}
               <div className="flex gap-1.5">
                 {LEVELS.map((level) => {
                   const active = level === result.demandLevel;
@@ -177,7 +174,6 @@ export default function OwnerDemandPrediction({ cars }: { cars: Car[] }) {
                 })}
               </div>
 
-              {/* Full probability breakdown, same label/bar/value grid as BarChart */}
               <ul className="space-y-2 border-t border-bay/10 pt-3">
                 {(["High", "Medium", "Low"] as DemandLevel[]).map((level) => {
                   const pct = Math.round((result.probabilities[level] ?? 0) * 100);

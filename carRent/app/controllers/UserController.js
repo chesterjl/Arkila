@@ -35,31 +35,39 @@ router.patch('/password', protect, asyncHandler(async (req, res) => {
   })
 );
 
-// Get all users (Optional query parameter: ?role=customer or ?role=owner)
 router.get('/admin/users', protect, authorize('admin'), asyncHandler(async (req, res) => {
     const users = await UserService.getAllUsers(req.query.role);
     res.status(200).json({ success: true, users });
   })
 );
 
-// Get all pending owner verification requests
 router.get('/admin/owners/pending', protect, authorize('admin'), asyncHandler(async (req, res) => {
     const owners = await UserService.getPendingOwners();
     res.status(200).json({ success: true, owners });
   })
 );
 
-// Approve owner verification
 router.patch('/admin/owners/:id/approve', protect, authorize('admin'), asyncHandler(async (req, res) => {
     const user = await UserService.approveOwner(req.params.id);
     res.status(200).json({ success: true, message: 'Owner account approved successfully', user });
   })
 );
 
-// Reject owner verification
 router.patch('/admin/owners/:id/reject', protect, authorize('admin'), asyncHandler(async (req, res) => {
     const user = await UserService.rejectOwner(req.params.id, req.body.reason);
     res.status(200).json({ success: true, message: 'Owner account rejected', user });
+  })
+);
+
+router.patch('/admin/users/:id/suspend', protect, authorize('admin'), asyncHandler(async (req, res) => {
+    const user = await UserService.suspendUser(req.params.id, req.body.reason);
+    res.status(200).json({ success: true, message: 'Account suspended', user });
+  })
+);
+
+router.patch('/admin/users/:id/reactivate', protect, authorize('admin'), asyncHandler(async (req, res) => {
+    const user = await UserService.reactivateUser(req.params.id);
+    res.status(200).json({ success: true, message: 'Account reactivated', user });
   })
 );
 

@@ -50,6 +50,10 @@ export default function PendingListCar({ car, onClose, onApprove, onReject, busy
           <dd>{new Date(car.createdAt).toLocaleDateString()}</dd>
         </dl>
 
+        {car.adminNote && (
+          <p className="rounded-md bg-mist p-2 text-sm text-coral">Admin note: {car.adminNote}</p>
+        )}
+
         <div className="space-y-2">
           <p className="label">Certificate of Registration submitted</p>
           <img src={car.registrationImageUrl} alt="Certificate of Registration" className="max-h-64 w-full rounded-md border object-contain"/>
@@ -68,11 +72,11 @@ export default function PendingListCar({ car, onClose, onApprove, onReject, busy
               </button>
             )}
           </div>
-        ) : (
+        ) : car.listingStatus === "pending" ? (
           <p className="rounded-md bg-mist p-3 text-xs text-bay/70">
             This listing is waiting for an admin to review it. It will move to your car list automatically once approved.
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );

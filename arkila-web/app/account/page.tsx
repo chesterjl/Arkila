@@ -17,6 +17,7 @@ interface ApiErrorBody {
 }
 
 type Tab = "profile" | "security";
+const MAX_OWNER_IDS = 2;
 
 const OWNER_STATUS_COPY: Record<OwnerStatus, { headline: string; detail: string; tone: string }> = {
   approved: {
@@ -72,13 +73,12 @@ function Account() {
     [user?.name]
   );
 
-  if (!user) return null;
-
-  const isOwner = user.role === "owner";
-  const ownerStatus = isOwner ? OWNER_STATUS_COPY[user.ownerStatus || "pending"] : null;
+  const isOwner = user?.role === "owner";
+  const canManageIds = user?.role === "customer" || user?.role === "owner";
+  const maxIds = isOwner ? 2 : 1;
 
   useEffect(() => {
-    if (!isOwner) return;
+    if (!canManageIds) return;
 
     const loadIds = async () => {
       try {
@@ -86,13 +86,12 @@ function Account() {
         setIds(response.data.ids || []);
       } catch (x) {
         const axiosErr = x as AxiosError<ApiErrorBody>;
-        setIdErr( axiosErr.response?.data?.message ||  "Failed to load ID documents."
-        );
+        setIdErr(axiosErr.response?.data?.message || "Failed to load ID documents.");
       }
     };
 
     loadIds();
-  }, [isOwner]);
+  }, [canManageIds]);
 
   useEffect(() => {
     refreshUser();
@@ -101,7 +100,6 @@ function Account() {
   const refreshUser = async () => {
     try {
       const response = await AxiosConfig.get(API_ENDPOINTS.GET_MY_INFO);
-
       if (response.status === 200) {
         setUser(response.data.user || response.data);
       }
@@ -109,6 +107,11 @@ function Account() {
       console.error("Failed to refresh user:", x);
     }
   };
+
+  if (!user) return null;
+
+  const suspended = Boolean(user.isSuspended);
+  const ownerStatus = isOwner ? OWNER_STATUS_COPY[user.ownerStatus || "pending"] : null;
 
   const saveProfile = async (e: FormEvent) => {
     e.preventDefault();
@@ -163,33 +166,68 @@ function Account() {
     }
   };
 
-  const updateId = async (
-    id: string,
-    file: File,
-    idType?: string
-  ) => {
+  const updateId = async (id: string, file: File) => {
     setIdBusy(true);
     setIdErr("");
     setIdOk(false);
 
     try {
       const formData = new FormData();
-
       formData.append("idImage", file);
 
-      if (idType) {
-        formData.append("idType", idType);
+      const response = await AxiosConfig.patch(API_ENDPOINTS.REPLACE_ID(id), formData);
+
+      setIds((current) => current.map((item) => (item._id === id ? response.data.id : item)));
+
+      if (isOwner) {
+        setUser({
+          ...user,
+          ownerStatus: "pending",
+          rejectionReason: undefined,
+        });
       }
 
-      const response = await AxiosConfig.patch(API_ENDPOINTS.REPLACE_ID(id), formData);
-      setIds((current) => current.map((item) => item._id === id ? response.data.id : item));
-
-      // Backend changes rejected -> pending
-      setUser({...user, ownerStatus: "pending", rejectionReason: undefined,});
       setIdOk(true);
     } catch (x) {
       const axiosErr = x as AxiosError<ApiErrorBody>;
       setIdErr(axiosErr.response?.data?.message || "Failed to update ID.");
+    } finally {
+      setIdBusy(false);
+    }
+  };
+
+  const addId = async (file: File) => {
+    setIdBusy(true);
+    setIdErr("");
+    setIdOk(false);
+
+    try {
+      const formData = new FormData();
+      formData.append("idImages", file);
+
+      const response = await AxiosConfig.post(API_ENDPOINTS.ADD_ID, formData);
+      setIds((current) => [...current, ...(response.data.ids || [])]);
+      await refreshUser();
+      setIdOk(true);
+    } catch (x) {
+      const axiosErr = x as AxiosError<ApiErrorBody>;
+      setIdErr(axiosErr.response?.data?.message || "Failed to add ID.");
+    } finally {
+      setIdBusy(false);
+    }
+  };
+
+  const removeId = async (id: string) => {
+    setIdBusy(true);
+    setIdErr("");
+    setIdOk(false);
+
+    try {
+      await AxiosConfig.delete(API_ENDPOINTS.DELETE_ID(id));
+      setIds((current) => current.filter((item) => item._id !== id));
+    } catch (x) {
+      const axiosErr = x as AxiosError<ApiErrorBody>;
+      setIdErr(axiosErr.response?.data?.message || "Failed to remove ID.");
     } finally {
       setIdBusy(false);
     }
@@ -216,6 +254,7 @@ function Account() {
               {user.role}
             </span>
             {ownerStatus && <Badge status={user.ownerStatus || "pending"} />}
+            {suspended && <Badge status="suspended" />}
           </div>
 
           {isOwner && user.brandName && (
@@ -224,23 +263,37 @@ function Account() {
             </p>
           )}
 
-          {ownerStatus && (
-            <div className={`rounded-md border-l-4 p-3 text-left text-sm ${ownerStatus.tone}`}>
-              <p className="font-semibold">{ownerStatus.headline}</p>
-              <p className="mt-0.5 text-bay/70">{ownerStatus.detail}</p>
-              {user.ownerStatus === "rejected" && user.rejectionReason && (
-                <p className="mt-1 text-coral">Reason: {user.rejectionReason}</p>
-              )}
+          {suspended ? (
+            <div className="rounded-md border-l-4 border-coral bg-coral/5 p-3 text-left text-sm">
+              <p className="font-semibold text-coral">Account suspended</p>
+              <p className="mt-0.5 text-bay/70">
+                {isOwner
+                  ? "Your cars are hidden from browsing and you can't list cars or approve new requests. Existing rentals continue as normal."
+                  : "You can browse cars, but you can't request new rentals until an admin reactivates your account."}
+              </p>
+              {user.suspensionReason && <p className="mt-1 text-coral">Reason: {user.suspensionReason}</p>}
             </div>
+          ) : (
+            ownerStatus && (
+              <div className={`rounded-md border-l-4 p-3 text-left text-sm ${ownerStatus.tone}`}>
+                <p className="font-semibold">{ownerStatus.headline}</p>
+                <p className="mt-0.5 text-bay/70">{ownerStatus.detail}</p>
+                {user.ownerStatus === "rejected" && user.rejectionReason && (
+                  <p className="mt-1 text-coral">Reason: {user.rejectionReason}</p>
+                )}
+              </div>
+            )
           )}
         </aside>
 
         <div className="space-y-4">
           <div role="tablist" className="flex gap-1 border-b border-bay/10">
-            {([
-              ["profile", "Profile"],
-              ["security", "Security"],
-            ] as [Tab, string][]).map(([key, label]) => (
+            {(
+              [
+                ["profile", "Profile"],
+                ["security", "Security"],
+              ] as [Tab, string][]
+            ).map(([key, label]) => (
               <button
                 key={key}
                 role="tab"
@@ -263,16 +316,27 @@ function Account() {
                     className="input"
                     required
                     value={profile.name}
-                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({
+                        ...profile,
+                        name: e.target.value,
+                      })
+                    }
                   />
                 </Field>
+
                 <Field label="Phone number">
                   <input
                     type="tel"
                     className="input"
                     placeholder="09123456789"
                     value={profile.phone}
-                    onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({
+                        ...profile,
+                        phone: e.target.value,
+                      })
+                    }
                   />
                 </Field>
               </div>
@@ -283,7 +347,12 @@ function Account() {
                   className="input"
                   required
                   value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  onChange={(e) =>
+                    setProfile({
+                      ...profile,
+                      email: e.target.value,
+                    })
+                  }
                 />
               </Field>
 
@@ -293,7 +362,12 @@ function Account() {
                   required
                   placeholder="e.g. 123 Rizal St, Sampaloc, Manila"
                   value={profile.address}
-                  onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                  onChange={(e) =>
+                    setProfile({
+                      ...profile,
+                      address: e.target.value,
+                    })
+                  }
                 />
               </Field>
 
@@ -304,79 +378,136 @@ function Account() {
                     className="input"
                     placeholder="e.g. Josh Car Rentals"
                     value={profile.brandName}
-                    onChange={(e) => setProfile({ ...profile, brandName: e.target.value })}
+                    onChange={(e) =>
+                      setProfile({
+                        ...profile,
+                        brandName: e.target.value,
+                      })
+                    }
                   />
-                  <p className="mt-1 text-xs text-bay/60">Shown to renters instead of your name on your listings.</p>
+                  <p className="mt-1 text-xs text-bay/60">
+                    Shown to renters instead of your name on your listings.
+                  </p>
                 </Field>
               )}
 
-              {isOwner && (
+              {canManageIds && (
                 <div className="panel space-y-4">
                   <div>
                     <h2 className="font-semibold">Identity Verification</h2>
                     <p className="mt-1 text-sm text-bay/60">
-                      Upload a valid government-issued ID for owner verification.
+                      {isOwner
+                        ? "Upload a valid government-issued ID for owner verification."
+                        : "Upload a valid government-issued ID. This ID will be used for your rental bookings."}
                     </p>
                   </div>
 
-                  {user.ownerStatus === "rejected" && (
+                  {isOwner && user.ownerStatus === "rejected" && (
                     <div className="rounded-md border border-coral bg-coral/5 p-3">
                       <p className="font-semibold text-coral">
                         Your verification was rejected.
                       </p>
-
                       {user.rejectionReason && (
                         <p className="mt-1 text-sm text-bay/70">
                           Reason: {user.rejectionReason}
                         </p>
                       )}
-
                       <p className="mt-2 text-sm text-bay/70">
                         Please replace your ID below and submit it for verification again.
                       </p>
                     </div>
                   )}
 
-                  {ids.map((id) => (
+                  {ids.map((id, i) => (
                     <div key={id._id} className="rounded-md border border-bay/10 p-4">
                       <div className="flex items-center justify-between gap-4">
                         <div>
                           <p className="font-medium">
-                            {id.idType || "Identification Document"}
-                          </p>
-                          <p className="text-sm text-bay/60">
-                            Status: {id.status || "pending"}
+                            {isOwner && ids.length > 1
+                              ? `Government ID ${i + 1}`
+                              : "Government ID"}
                           </p>
                         </div>
 
-                        <label className="btn btn-secondary cursor-pointer">
-                          {idBusy ? "Uploading..." : "Replace ID"}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={idBusy}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              updateId(id._id, file, id.idType);
-                              e.target.value = "";
-                            }}
-                          />
-                        </label>
+                        <div className="flex items-center gap-2">
+                          <label className="btn btn-ghost cursor-pointer">
+                            {idBusy ? "Uploading..." : "Replace ID"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={idBusy}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                updateId(id._id, file);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+
+                          {isOwner && ids.length > 1 && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost text-coral"
+                              disabled={idBusy}
+                              onClick={() => removeId(id._id)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {id.imageUrl && (
-                        <img src={id.imageUrl} alt="Uploaded identification document" className="mt-4 max-h-64 rounded-md border object-contain"/>
+                        <img
+                          src={id.imageUrl}
+                          alt="Uploaded identification document"
+                          className="mt-4 max-h-64 rounded-md border object-contain"
+                        />
                       )}
                     </div>
                   ))}
+
+                  {ids.length < maxIds && (
+                    <label className="flex cursor-pointer flex-col items-center gap-1 rounded-md border border-dashed border-bay/25 p-5 text-center text-sm hover:bg-bay/5">
+                      <span className="font-semibold text-teal">
+                        {idBusy
+                          ? "Uploading..."
+                          : ids.length === 0
+                          ? "Upload government ID"
+                          : "+ Add another government ID"}
+                      </span>
+
+                      <span className="text-xs text-bay/60">
+                        {isOwner
+                          ? `You can keep up to ${MAX_OWNER_IDS} IDs on file.`
+                          : "Only one government ID is required for your rental bookings."}
+                      </span>
+
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={idBusy}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          addId(file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
 
                   <ErrorNote text={idErr} />
 
                   {idOk && (
                     <p className="text-sm text-teal">
-                      ID updated successfully. Your verification has been submitted for admin review.
+                      ID updated successfully.
+                      {isOwner
+                        ? " Your verification has been submitted for admin review."
+                        : " This ID will be used for your rental bookings."}
                     </p>
                   )}
                 </div>

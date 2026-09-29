@@ -25,3 +25,12 @@ export const peso = (amount?: number | null): string => {
     maximumFractionDigits: 2,
   })}`;
 };
+
+// ---- Platform service fee (mirrors PLATFORM_FEE_PERCENT on the backend) ----
+export const feeSplit = (amount: number, pct = DEFAULT_SERVICE_FEE_PCT) => {
+  const fee = Math.round(amount * pct) / 100;
+  return { fee, ownerShare: Math.round((amount - fee) * 100) / 100 };
+};
+// Bookings created before the fee existed have no snapshot, so fall back to the default rate.
+export const feeOf = (b: { totalPrice: number; serviceFee?: number }) => b.serviceFee ?? feeSplit(b.totalPrice).fee;
+export const payoutOf = (b: { totalPrice: number; ownerPayout?: number }) => b.ownerPayout ?? feeSplit(b.totalPrice).ownerShare;

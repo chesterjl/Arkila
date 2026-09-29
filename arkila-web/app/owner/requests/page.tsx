@@ -93,7 +93,6 @@ function Requests() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Badge status={idDoc ? idDoc.status : "unverified"} />
                   <Badge status={b.status} />
                 </div>
               </div>

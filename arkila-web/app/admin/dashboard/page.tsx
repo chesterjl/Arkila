@@ -1,13 +1,15 @@
 // app/admin/dashboard/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import toast from "react-hot-toast";
 import AxiosConfig from "@/app/services/AxiosConfig";
 import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
 import RequireRole from "@/components/RequireRole";
 import { ErrorNote } from "@/components/Field";
-import type { Car, User } from "@/lib/types";
+import { peso, DEFAULT_SERVICE_FEE_PCT } from "@/lib/booking";
+import type { AdminStats } from "@/lib/types";
 import type { AxiosError, AxiosResponse } from "axios";
 
 interface ApiErrorBody {
@@ -16,95 +18,99 @@ interface ApiErrorBody {
 }
 
 function Dashboard() {
-  const [users, setUsers] = useState<User[] | null>(null);
-  const [cars, setCars] = useState<Car[] | null>(null);
-  const [pendingOwners, setPendingOwners] = useState<User[] | null>(null);
-  const [pendingCars, setPendingCars] = useState<Car[] | null>(null);
+  const [stats, setStats] = useState<AdminStats | null>(null);
   const [err, setErr] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const load = async () => {
-      try {
-        const [usersRes, carsRes, pendingOwnersRes, pendingCarsRes]: AxiosResponse[] = await Promise.all([
-          AxiosConfig.get(API_ENDPOINTS.GET_ADMIN_USERS()),
-          AxiosConfig.get(API_ENDPOINTS.GET_ADMIN_CARS_LIST),
-          AxiosConfig.get(API_ENDPOINTS.GET_ADMIN_PENDING_OWNERS),
-          AxiosConfig.get(API_ENDPOINTS.GET_ADMIN_PENDING_CARS_LIST),
-        ]);
-        
-        if (!isMounted) return;
-        setUsers(usersRes.data.users || []);
-        setCars(carsRes.data.cars || []);
-        setPendingOwners(pendingOwnersRes.data.owners || []);
-        setPendingCars(pendingCarsRes.data.cars || []);
-      } catch (e) {
-        if (!isMounted) return;
-        const axiosErr = e as AxiosError<ApiErrorBody>;
-        setErr(axiosErr.response?.data?.message || (e as Error).message || "Failed to load dashboard data.");
-      }
-    };
-
-    load();
-    return () => {
-      isMounted = false;
-    };
+  const load = useCallback(async () => {
+    try {
+      const res: AxiosResponse = await AxiosConfig.get(API_ENDPOINTS.ADMIN_STATS);
+      setStats(res.data.stats);
+    } catch (e) {
+      const axiosErr = e as AxiosError<ApiErrorBody>;
+      setErr(axiosErr.response?.data?.message || (e as Error).message || "Failed to load dashboard data.");
+    }
   }, []);
 
-  const loading = users === null || cars === null;
-  const totalCustomers = users?.filter((u) => u.role === "customer").length ?? 0;
-  const totalOwners = users?.filter((u) => u.role === "owner").length ?? 0;
-  const totalCars = cars?.length ?? 0;
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const stats: [string, string][] = [
-    ["Total customers", loading ? "..." : String(totalCustomers)],
-    ["Total owners", loading ? "..." : String(totalOwners)],
-    ["Total cars", loading ? "..." : String(totalCars)],
+  const syncPayouts = async () => {
+    setSyncing(true);
+    try {
+      const res: AxiosResponse = await AxiosConfig.post(API_ENDPOINTS.RELEASE_PENDING_PAYOUTS);
+      toast.success(res.data.message || "Payouts synced");
+      await load();
+    } catch (e) {
+      const axiosErr = e as AxiosError<ApiErrorBody>;
+      setErr(axiosErr.response?.data?.message || (e as Error).message || "Failed to sync payouts.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const v = (n?: number) => (stats ? String(n ?? 0) : "...");
+  const money = (n?: number) => (stats ? peso(n) : "...");
+
+  const main: [string, string][] = [
+    ["Total customers", v(stats?.totalCustomers)],
+    ["Total owners", v(stats?.totalOwners)],
+    ["Total cars", v(stats?.totalCars)],
+    [`Platform fees (${DEFAULT_SERVICE_FEE_PCT}%)`, money(stats?.platformFees)],
+  ];
+
+  const links: { href: string; title: string; text: string }[] = [
+    {
+      href: "/admin/owner",
+      title: "Owner verifications",
+      text: !stats ? "Loading..." : stats.pendingOwners === 0 ? "Nothing waiting on review." : `${stats.pendingOwners} account${stats.pendingOwners === 1 ? "" : "s"} waiting for review.`,
+    },
+    {
+      href: "/admin/cars",
+      title: "Car listings",
+      text: !stats ? "Loading..." : stats.pendingCars === 0 ? "Nothing waiting on review." : `${stats.pendingCars} listing${stats.pendingCars === 1 ? "" : "s"} waiting for review.`,
+    },
+    {
+      href: "/admin/users",
+      title: "Accounts",
+      text: !stats ? "Loading..." : `${stats.suspendedAccounts} suspended. Suspend or reactivate any account.`,
+    },
   ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Admin dashboard</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold">Admin dashboard</h1>
+        <button className="btn btn-ghost" disabled={syncing} onClick={syncPayouts}>
+          {syncing ? "Syncing..." : "Sync owner payouts"}
+        </button>
+      </div>
       <ErrorNote text={err} />
 
-      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {stats.map(([k, v]) => (
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {main.map(([k, val]) => (
           <div key={k} className="panel">
             <dt className="text-sm text-bay/70">{k}</dt>
-            <dd className="mt-1 font-display text-3xl font-extrabold">{v}</dd>
+            <dd className="mt-1 font-display text-3xl font-extrabold">{val}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Link href="/admin/owner" className="panel flex items-center justify-between gap-3 transition hover:shadow-md">
-          <div>
-            <h2 className="font-bold">Owner verifications</h2>
-            <p className="mt-1 text-sm text-bay/70">
-              {pendingOwners === null
-                ? "Loading..."
-                : pendingOwners.length === 0
-                ? "Nothing waiting on review."
-                : `${pendingOwners.length} account${pendingOwners.length === 1 ? "" : "s"} waiting for review.`}
-            </p>
-          </div>
-          <span className="shrink-0 font-semibold text-teal underline">Review</span>
-        </Link>
+      <p className="text-xs text-bay/60">
+        Platform fees are the {DEFAULT_SERVICE_FEE_PCT}% commission on completed rentals. The remaining share is credited to the car owner automatically when the balance is paid.
+      </p>
 
-        <Link href="/admin/cars" className="panel flex items-center justify-between gap-3 transition hover:shadow-md">
-          <div>
-            <h2 className="font-bold">Car listing verifications</h2>
-            <p className="mt-1 text-sm text-bay/70">
-              {pendingCars === null
-                ? "Loading..."
-                : pendingCars.length === 0
-                ? "Nothing waiting on review."
-                : `${pendingCars.length} listing${pendingCars.length === 1 ? "" : "s"} waiting for review.`}
-            </p>
-          </div>
-          <span className="shrink-0 font-semibold text-teal underline">Review</span>
-        </Link>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {links.map((l) => (
+          <Link key={l.href} href={l.href} className="panel flex items-center justify-between gap-3 transition hover:shadow-md">
+            <div>
+              <h2 className="font-bold">{l.title}</h2>
+              <p className="mt-1 text-sm text-bay/70">{l.text}</p>
+            </div>
+            <span className="shrink-0 font-semibold text-teal underline">Open</span>
+          </Link>
+        ))}
       </div>
     </div>
   );

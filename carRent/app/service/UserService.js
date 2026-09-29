@@ -1,4 +1,5 @@
 // UserService.js
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const IdDocumentService = require('./IdDocumentService');
 const ApiError = require('../utils/ApiError');
@@ -8,7 +9,7 @@ const { generateToken } = require('../utils/JwtUtil');
 const authResponse = (user) => ({ token: generateToken(user), expiresIn: process.env.JWT_EXPIRES_IN || '1d', user });
 
 const register = async (body, files) => {
-  const { name, email, password, phone, address, brandName, idType, idTypes } = body;
+  const { name, email, password, phone, address, brandName } = body;
   const role = body.role || ROLES.CUSTOMER;
 
   if (!PUBLIC_ROLES.includes(role)) throw new ApiError(400, 'Role must be "customer" or "owner".');
@@ -33,7 +34,7 @@ const register = async (body, files) => {
 
   if (role === ROLES.OWNER) {
     try {
-      await IdDocumentService.addDocuments(user, idFiles, idTypes ?? idType);
+      await IdDocumentService.addDocuments(user, idFiles);
     } catch (err) {
       await User.findByIdAndDelete(user._id);
       throw err;
@@ -51,8 +52,7 @@ const login = async ({ email, password }) => {
 };
 
 const updateInfo = async (user, body) => {
-  const { name, email, password, phone, address, brandName, idType, idTypes } = body;
-
+  const { name, email, phone, address, brandName } = body;
   if (
     name === undefined &&
     phone === undefined &&
@@ -154,7 +154,44 @@ const createAdmin = async (body) => {
   return { user };
 };
 
+const assertUserId = (id) => {
+  if (typeof id !== 'string' || !/^[a-f\d]{24}$/i.test(id) || !mongoose.isValidObjectId(id)) throw new ApiError(400, 'Invalid user id.');
+};
+
+// Admin: suspend a customer or owner account. Admin accounts can never be suspended (this also blocks self-suspension).
+const suspendUser = async (userId, reason) => {
+  assertUserId(userId);
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found.');
+  if (user.role === ROLES.ADMIN) throw new ApiError(403, 'Admin accounts cannot be suspended.');
+  if (user.isSuspended) throw new ApiError(400, 'Account is already suspended.');
+  if (reason !== undefined && reason !== null && typeof reason !== 'string') throw new ApiError(400, 'reason must be text.');
+  const text = (reason || '').trim();
+  if (text.length > 500) throw new ApiError(400, 'reason must be at most 500 characters.');
+
+  user.isSuspended = true;
+  user.suspensionReason = text || 'Suspended by an administrator.';
+  user.suspendedAt = new Date();
+  await user.save();
+  return user;
+};
+
+const reactivateUser = async (userId) => {
+  assertUserId(userId);
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found.');
+  if (!user.isSuspended) throw new ApiError(400, 'Account is not suspended.');
+
+  user.isSuspended = false;
+  user.suspensionReason = undefined;
+  user.suspendedAt = undefined;
+  await user.save();
+  return user;
+};
+
 module.exports = {
+  suspendUser,
+  reactivateUser,
   register,
   login,
   updateInfo,

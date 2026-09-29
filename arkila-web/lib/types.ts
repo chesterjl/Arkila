@@ -1,7 +1,6 @@
 // Enums & Literal Types
 export type Role = "customer" | "owner" | "admin";
 export type ListingStatus = "pending" | "approved" | "rejected" | "suspended";
-export type IdDocumentStatus = "pending" | "verified" | "rejected";
 export type OwnerStatus = "pending" | "approved" | "rejected";
 
 export const VEHICLE_TYPES = [
@@ -21,8 +20,6 @@ export const FUEL_TYPES = [
   "hybrid",
 ] as const;
 
-
-// Derive TypeScript types directly from the arrays
 export type VehicleType = (typeof VEHICLE_TYPES)[number];
 export type FuelType = (typeof FUEL_TYPES)[number];
 
@@ -40,6 +37,7 @@ export type BookingStatus =
   | "confirmed"
   | "ongoing"
   | "returned"
+  | "review_pending"
   | "completed";
 
 export type PaymentStatus = "unpaid" | "pending" | "paid" | "expired";
@@ -55,7 +53,11 @@ export interface User {
   address: string;
   brandName?: string;
   ownerStatus?: OwnerStatus;
-  rejectionReason?: string; // Set by UserService.rejectOwner when ownerStatus === "rejected"
+  rejectionReason?: string;
+  isSuspended?: boolean;
+  suspensionReason?: string;
+  suspendedAt?: string;
+  earnings?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +70,20 @@ export interface AdminOverview {
   pendingCars: number;
 }
 
+export interface AdminStats {
+  totalCustomers: number;
+  totalOwners: number;
+  totalCars: number;
+  pendingOwners: number;
+  pendingCars: number;
+  suspendedAccounts: number;
+  suspendedCars: number;
+  completedRentals: number;
+  grossVolume: number;
+  platformFees: number;
+  ownerPayouts: number;
+}
+
 export interface AuthResponse {
   success: boolean;
   message?: string;
@@ -76,22 +92,18 @@ export interface AuthResponse {
   user: User;
 }
 
-// ID Verification Documents
 export interface IdDocument {
   _id: string;
   user: string | User;
-  idType: string;
   imageUrl: string;
   imagePublicId: string;
-  status: IdDocumentStatus;
   createdAt: string;
   updatedAt: string;
 }
 
-// Car Listing Types
 export interface Car {
   _id: string;
-  owner: string | User; // May be populated with full User or raw ObjectId
+  owner: string | User; 
   name: string;
   description: string;
   rentalPrice: number;
@@ -121,7 +133,6 @@ export interface CarFilterQuery {
   search?: string;
 }
 
-// Booking & Payment Types
 export interface PaymentSubDocument {
   amount: number;
   status: PaymentStatus;
@@ -148,6 +159,10 @@ export interface Booking {
   endDate: string;
   totalDays: number;
   totalPrice: number;
+  serviceFeePercent?: number;
+  serviceFee?: number;
+  ownerPayout?: number;
+  payout?: { status: "pending" | "released"; amount?: number; releasedAt?: string };
   deliveryMethod: DeliveryMethod;
   downPayment: PaymentSubDocument;
   balancePayment: PaymentSubDocument;
@@ -162,7 +177,6 @@ export interface CreateBookingPayload {
   carId: string;
   startDate: string;
   endDate: string;
-  idType?: string;
   deliveryMethod?: DeliveryMethod;
 }
 
@@ -185,3 +199,33 @@ export interface Point {
   label: string;
   value: number;
 }
+
+// Reviews
+export interface PublicReview {
+  _id: string;
+  message: string;
+  createdAt: string;
+  reviewerName: string;
+}
+
+export interface Review {
+  _id: string;
+  booking: string;
+  car?: string;
+  customer?: string;
+  owner?: string;
+  message?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface ReviewEligibility {
+  success: boolean;
+  canReview: boolean;
+  review: Review | null;
+}
+
+export interface CreateReviewPayload {
+  message: string;
+}
+

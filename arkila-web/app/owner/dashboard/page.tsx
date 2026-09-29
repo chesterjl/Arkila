@@ -185,8 +185,6 @@ function Dashboard() {
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold">Owner dashboard</h1>
-
-      {/* Stats Panel */}
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {stats.map(([k, v]) => (
           <div key={k} className="panel">

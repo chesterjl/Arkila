@@ -9,6 +9,8 @@ const IdDocumentRoutes = require('./app/controllers/IdDocumentController');
 const CarRoutes = require('./app/controllers/CarController');
 const BookingRoutes = require('./app/controllers/BookingController');
 const PaymentRoutes = require('./app/controllers/PaymentController');
+const AdminRoutes = require('./app/controllers/AdminController');
+const ReviewRoutes = require('./app/controllers/ReviewController');
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use('/ids/', IdDocumentRoutes);
 app.use('/cars/', CarRoutes);
 app.use('/bookings/', BookingRoutes);
 app.use('/payments/', PaymentRoutes);
+app.use('/admin/', AdminRoutes);
+app.use('/reviews/', ReviewRoutes);
 app.use('/ml', require('./app/controllers/MLController'));
 
 app.use(notFound);

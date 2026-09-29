@@ -38,6 +38,16 @@ const bookingSchema = new mongoose.Schema(
     downPayment: { type: paymentSchema, required: true },
     balancePayment: { type: paymentSchema, required: true },
 
+    // Platform commission snapshot, fixed when the request is created so later rate changes never alter old bookings.
+    serviceFeePercent: Number,
+    serviceFee: Number,   // platform's cut of totalPrice
+    ownerPayout: Number,  // totalPrice - serviceFee
+    payout: {
+      status: { type: String, enum: ['pending', 'released'], default: 'pending' },
+      amount: Number,     // amount credited to the owner
+      releasedAt: Date,
+    },
+
     status: { type: String, enum: Object.values(BOOKING_STATUS), default: BOOKING_STATUS.PENDING, index: true },
     rejectionReason: String,
     

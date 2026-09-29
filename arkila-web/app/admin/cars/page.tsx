@@ -1,7 +1,7 @@
 // admin/cars/page.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AxiosConfig from "@/app/services/AxiosConfig";
 import { API_ENDPOINTS } from "@/app/services/ApiEndpoint";
@@ -9,7 +9,7 @@ import RequireRole from "@/components/RequireRole";
 import { ErrorNote, Field } from "@/components/Field";
 import Badge from "@/components/Badge";
 import PendingListCar from "@/components/PendingListCar";
-import type { Car, User } from "@/lib/types";
+import type { Car, ListingStatus, User } from "@/lib/types";
 import type { AxiosError, AxiosResponse } from "axios";
 
 interface ApiErrorBody {
@@ -17,30 +17,43 @@ interface ApiErrorBody {
   message: string;
 }
 
+type Tab = "all" | ListingStatus;
+type Action = "approve" | "reject" | "suspend" | "reinstate";
+
+const TABS: [Tab, string][] = [
+  ["all", "All"],
+  ["pending", "Pending"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["suspended", "Suspended"],
+];
+
+const ENDPOINT: Record<Action, (id: string) => string> = {
+  approve: API_ENDPOINTS.APPROVE_CAR,
+  reject: API_ENDPOINTS.REJECT_CAR,
+  suspend: API_ENDPOINTS.SUSPEND_CAR,
+  reinstate: API_ENDPOINTS.REINSTATE_CAR,
+};
+
 const peso = (n: number) => `₱${n.toLocaleString("en-PH")}`;
 
-function CarVerifications() {
+function CarListings() {
   const [cars, setCars] = useState<Car[] | null>(null);
-  const [viewing, setViewing] = useState<Car | null>(null);
+  const [tab, setTab] = useState<Tab>("pending");
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [reasonFor, setReasonFor] = useState<{ id: string; action: "reject" | "suspend" } | null>(null);
   const [reason, setReason] = useState("");
 
   const load = useCallback(async () => {
     setErr("");
     try {
-      const response: AxiosResponse = await AxiosConfig.get(
-        API_ENDPOINTS.GET_ADMIN_PENDING_CARS_LIST
-      );
+      const response: AxiosResponse = await AxiosConfig.get(API_ENDPOINTS.GET_ADMIN_CARS_LIST);
       setCars(response.data.cars || []);
     } catch (e) {
       const axiosErr = e as AxiosError<ApiErrorBody>;
-      setErr(
-        axiosErr.response?.data?.message ||
-          (e as Error).message ||
-          "Failed to load pending listings."
-      );
+      setErr(axiosErr.response?.data?.message || (e as Error).message || "Failed to load listings.");
     }
   }, []);
 
@@ -48,92 +61,83 @@ function CarVerifications() {
     load();
   }, [load]);
 
-  const approve = async (id: string) => {
+  const run = async (id: string, action: Action, note?: string) => {
     setErr("");
     setBusyId(id);
     try {
-      await AxiosConfig.patch(API_ENDPOINTS.APPROVE_CAR(id));
-      setCars((prev) => (prev ? prev.filter((c) => c._id !== id) : prev));
-      setViewing((v) => (v && v._id === id ? null : v));
+      const withReason = action === "reject" || action === "suspend";
+      const { data } = await AxiosConfig.patch(ENDPOINT[action](id), withReason ? { reason: note || undefined } : {});
+      // The API returns the owner as a bare id, so keep the populated owner we already have.
+      setCars((prev) => (prev ? prev.map((c) => (c._id === id ? { ...data.car, owner: c.owner } : c)) : prev));
+      setReasonFor(null);
+      setReason("");
+      if (action === "approve" || action === "reject") setViewingId(null);
     } catch (e) {
       const axiosErr = e as AxiosError<ApiErrorBody>;
-      setErr(
-        axiosErr.response?.data?.message ||
-          (e as Error).message ||
-          "Failed to approve this listing."
-      );
+      setErr(axiosErr.response?.data?.message || (e as Error).message || `Failed to ${action} this listing.`);
     } finally {
       setBusyId(null);
     }
   };
 
-  const reject = async (id: string) => {
-    setErr("");
-    setBusyId(id);
-    try {
-      await AxiosConfig.patch(API_ENDPOINTS.REJECT_CAR(id), {
-        reason: reason || undefined,
-      });
-      setCars((prev) => (prev ? prev.filter((c) => c._id !== id) : prev));
-      setViewing((v) => (v && v._id === id ? null : v));
-      setRejectingId(null);
-      setReason("");
-    } catch (e) {
-      const axiosErr = e as AxiosError<ApiErrorBody>;
-      setErr(
-        axiosErr.response?.data?.message ||
-          (e as Error).message ||
-          "Failed to reject this listing."
-      );
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: cars?.length ?? 0 };
+    (cars || []).forEach((car) => {
+      c[car.listingStatus] = (c[car.listingStatus] || 0) + 1;
+    });
+    return c;
+  }, [cars]);
+
+  const shown = (cars || []).filter((c) => tab === "all" || c.listingStatus === tab);
+  const viewing = cars?.find((c) => c._id === viewingId) || null;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">Car listing verifications</h1>
+          <h1 className="text-2xl font-bold">Car listings</h1>
           <p className="text-sm text-bay/70">
-            New and resubmitted listings wait here until their Certificate of
-            Registration is checked.
+            Approve or reject new listings, suspend a live one, or reinstate a suspended one. Suspending never affects existing bookings; it only stops new requests.
           </p>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-ghost" onClick={load}>
-            Refresh
-          </button>
-          <Link href="/admin/dashboard" className="btn btn-ghost">
-            Back to dashboard
-          </Link>
+          <button className="btn btn-ghost" onClick={load}>Refresh</button>
+          <Link href="/admin/dashboard" className="btn btn-ghost">Back to dashboard</Link>
         </div>
+      </div>
+
+      <div role="tablist" className="flex flex-wrap gap-1 border-b border-bay/10">
+        {TABS.map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${
+              tab === key ? "border-teal text-teal" : "border-transparent text-bay/60 hover:text-bay"
+            }`}
+          >
+            {label} <span className="text-xs font-normal">({counts[key] ?? 0})</span>
+          </button>
+        ))}
       </div>
 
       <ErrorNote text={err} />
 
       {cars === null ? (
         <p className="text-bay/60">Loading...</p>
-      ) : cars.length === 0 ? (
-        <p className="panel">No car listings waiting for verification.</p>
+      ) : shown.length === 0 ? (
+        <p className="panel">No listings in this category.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {cars.map((c) => {
-            const owner =
-              typeof c.owner === "object" ? (c.owner as User) : null;
+          {shown.map((c) => {
+            const owner = typeof c.owner === "object" ? (c.owner as User) : null;
             const busy = busyId === c._id;
-            const rejecting = rejectingId === c._id;
+            const asking = reasonFor?.id === c._id ? reasonFor.action : null;
 
             return (
-              <article
-                key={c._id}
-                className="panel flex flex-col overflow-hidden p-0 transition hover:shadow-sm"
-              >
-                <img
-                  src={c.imageUrl}
-                  alt={c.name}
-                  className="h-40 w-full shrink-0 object-cover"
-                />
+              <article key={c._id} className="panel flex flex-col overflow-hidden p-0 transition hover:shadow-sm">
+                <img src={c.imageUrl} alt={c.name} className="h-40 w-full shrink-0 object-cover" />
 
                 <div className="flex flex-1 flex-col p-4">
                   <div className="flex-1 space-y-2">
@@ -142,70 +146,71 @@ function CarVerifications() {
                       <Badge status={c.listingStatus} />
                     </div>
                     <p className="text-sm text-bay/70">
-                      {owner ? owner.brandName || owner.name : "Owner"} ·{" "}
-                      {peso(c.rentalPrice)}/day
+                      {owner ? owner.brandName || owner.name : "Owner"} · {peso(c.rentalPrice)}/day
                     </p>
                     <p className="text-xs capitalize text-bay/60">
-                      {c.vehicleType} · {c.fuelType} · {c.seats} seats ·{" "}
-                      {c.location}
+                      {c.vehicleType} · {c.fuelType} · {c.seats} seats · {c.location}
                     </p>
+                    {c.adminNote && (c.listingStatus === "rejected" || c.listingStatus === "suspended") && (
+                      <p className="rounded-md bg-mist p-2 text-xs text-coral">Reason: {c.adminNote}</p>
+                    )}
                   </div>
 
                   <div className="mt-3 space-y-3">
                     <button
                       type="button"
                       className="w-full rounded-lg bg-teal/10 py-2 text-center text-xs font-semibold text-teal transition-colors hover:bg-teal hover:text-white"
-                      onClick={() => setViewing(c)}
+                      onClick={() => setViewingId(c._id)}
                     >
                       View Registration & Details
                     </button>
 
-                    {rejecting ? (
+                    {asking ? (
                       <div className="space-y-2 rounded-md bg-mist p-3">
-                        <Field label="Reason for rejection">
-                          <textarea
-                            className="input"
-                            rows={2}
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                          />
+                        <Field label={asking === "reject" ? "Reason for rejection" : "Reason for suspension"}>
+                          <textarea className="input" rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
                         </Field>
                         <div className="flex gap-2">
                           <button
                             className="btn btn-ghost"
                             disabled={busy}
                             onClick={() => {
-                              setRejectingId(null);
+                              setReasonFor(null);
                               setReason("");
                             }}
                           >
                             Cancel
                           </button>
-                          <button
-                            className="btn btn-danger"
-                            disabled={busy}
-                            onClick={() => reject(c._id)}
-                          >
-                            {busy ? "Please wait..." : "Confirm rejection"}
+                          <button className="btn btn-danger" disabled={busy} onClick={() => run(c._id, asking, reason)}>
+                            {busy ? "Please wait..." : asking === "reject" ? "Confirm rejection" : "Confirm suspension"}
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="flex gap-2 border-t border-bay/10 pt-3">
-                        <button
-                          className="btn btn-primary flex-1"
-                          disabled={busy}
-                          onClick={() => approve(c._id)}
-                        >
-                          {busy ? "Please wait..." : "Approve"}
-                        </button>
-                        <button
-                          className="btn btn-ghost"
-                          disabled={busy}
-                          onClick={() => setRejectingId(c._id)}
-                        >
-                          Reject
-                        </button>
+                        {c.listingStatus === "pending" && (
+                          <>
+                            <button className="btn btn-primary flex-1" disabled={busy} onClick={() => run(c._id, "approve")}>
+                              {busy ? "Please wait..." : "Approve"}
+                            </button>
+                            <button className="btn btn-ghost" disabled={busy} onClick={() => setReasonFor({ id: c._id, action: "reject" })}>
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        {c.listingStatus === "approved" && (
+                          <button className="btn btn-ghost flex-1 text-coral" disabled={busy} onClick={() => setReasonFor({ id: c._id, action: "suspend" })}>
+                            Suspend listing
+                          </button>
+                        )}
+                        {c.listingStatus === "suspended" && (
+                          <button className="btn btn-primary flex-1" disabled={busy} onClick={() => run(c._id, "reinstate")}>
+                            {busy ? "Please wait..." : "Reinstate listing"}
+                          </button>
+                        )}
+                        {c.listingStatus === "rejected" && (
+                          <p className="text-xs text-bay/60">The owner must edit and resubmit this listing for another review.</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -219,12 +224,16 @@ function CarVerifications() {
       {viewing && (
         <PendingListCar
           car={viewing}
-          onClose={() => setViewing(null)}
-          onApprove={() => approve(viewing._id)}
-          onReject={() => {
-            setRejectingId(viewing._id);
-            setViewing(null);
-          }}
+          onClose={() => setViewingId(null)}
+          onApprove={viewing.listingStatus === "pending" ? () => run(viewing._id, "approve") : undefined}
+          onReject={
+            viewing.listingStatus === "pending"
+              ? () => {
+                  setReasonFor({ id: viewing._id, action: "reject" });
+                  setViewingId(null);
+                }
+              : undefined
+          }
           busy={busyId === viewing._id}
         />
       )}
@@ -235,7 +244,7 @@ function CarVerifications() {
 export default function Page() {
   return (
     <RequireRole role="admin">
-      <CarVerifications />
+      <CarListings />
     </RequireRole>
   );
 }

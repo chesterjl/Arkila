@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Car = require('../models/Car');
 const Booking = require('../models/Booking');
+const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { uploadBuffer, deleteImage } = require('../utils/CloudinaryUtil');
 const { CAR_LISTING_STATUS, ACTIVE_BOOKING_STATUSES } = require('../config/constants');
@@ -28,6 +29,9 @@ const cleanReason = (reason) => {
   return t;
 };
 
+// Cars of suspended owners are hidden from the marketplace.
+const suspendedOwnerIds = () => User.find({ isSuspended: true }).distinct('_id');
+
 const parseDay = (v) => {
   if (typeof v !== 'string' || !v) return null;
   const d = new Date(v);
@@ -52,12 +56,13 @@ const getAny = async (id) => {
 };
 
 const createCar = async (owner, body, files) => {
+  assertNotSuspended(owner, 'list a new car');
   const imageFile = files?.image?.[0];
   const regFile = files?.registrationImage?.[0];
   if (!imageFile) throw new ApiError(400, 'Car image is required (field "image").');
   if (!regFile) throw new ApiError(400, 'Certificate of Registration image is required (field "registrationImage") to prove this car is yours.');
 
-  const img = await uploadBuffer(imageFile.buffer, 'carrent/cars');
+  const img = await uploadBuffer(imageFile.buffer, 'carreant/cars');
 
   let reg;
   try {
@@ -143,11 +148,12 @@ const displayCars = async (query = {}) => {
     bookingFilter.endDate = { $gt: start };
   }
 
-  const heldCarIds = await Booking.distinct('car', bookingFilter);
+  const [heldCarIds, blockedOwnerIds] = await Promise.all([Booking.distinct('car', bookingFilter), suspendedOwnerIds()]);
 
   return Car.find({
     listingStatus: STATUS.APPROVED,
     isAvailable: true,
+    ...(blockedOwnerIds.length && { owner: { $nin: blockedOwnerIds } }),
     ...(heldCarIds.length && { _id: { $nin: heldCarIds } }),
   })
     .select(PUBLIC_SELECT)
@@ -161,7 +167,7 @@ const getCarById = async (id) => {
     .select(PUBLIC_SELECT)
     .populate('owner', 'name brandName')
     .lean();
-  if (!car) throw new ApiError(404, 'Car not found.');
+  if (!car || (await User.exists({ _id: car.owner?._id, isSuspended: true }))) throw new ApiError(404, 'Car not found.');
 
   car.hasActiveBooking = Boolean(await Booking.exists({ car: car._id, status: { $in: ACTIVE_BOOKING_STATUSES } }));
   return car;
@@ -184,7 +190,9 @@ const getAllCarsForAdmin = async () => {
 
 const approveCar = async (id) => {
   const car = await getAny(id);
-  if (car.listingStatus === STATUS.APPROVED) throw new ApiError(400, 'Car is already approved.');
+  if (car.listingStatus !== STATUS.PENDING) {
+    throw new ApiError(400, 'Only a pending listing can be approved (reinstate a suspended one; a rejected one must be resubmitted by its owner).');
+  }
   car.listingStatus = STATUS.APPROVED;
   car.adminNote = undefined;
   car.reviewedAt = new Date();
@@ -193,6 +201,7 @@ const approveCar = async (id) => {
 
 const rejectCar = async (id, reason) => {
   const car = await getAny(id);
+  if (car.listingStatus !== STATUS.PENDING) throw new ApiError(400, 'Only a pending listing can be rejected. Suspend an approved listing instead.');
   car.listingStatus = STATUS.REJECTED;
   car.adminNote = cleanReason(reason) || 'Rejected by admin.';
   car.reviewedAt = new Date();

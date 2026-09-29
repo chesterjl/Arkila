@@ -142,8 +142,6 @@ function Browse() {
     return true;
   });
 
-  // Only re-rank when AI mode is on AND the service actually returned
-  // scores -- otherwise keep the normal, unmodified filter order.
   const displayCars = useMemo(() => {
     if (!aiMode || !aiAvailable || Object.keys(aiScores).length === 0) return filteredCars;
     return [...filteredCars].sort(

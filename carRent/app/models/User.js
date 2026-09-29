@@ -35,6 +35,19 @@ const userSchema = new mongoose.Schema(
       },
     },
     rejectionReason: { type: String, trim: true },
+
+    // Admin suspension: a suspended user cannot log in or call any protected route.
+    isSuspended: { type: Boolean, default: false, index: true },
+    suspensionReason: { type: String, trim: true },
+    suspendedAt: Date,
+    
+    // Car owners only: running total of payouts credited to them (their share only, never the platform fee).
+    earnings: {
+      type: Number,
+      default: function () {
+        return this.role === ROLES.OWNER ? 0 : undefined;
+      },
+    },
   },
   { timestamps: true }
 );

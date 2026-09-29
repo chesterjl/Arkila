@@ -62,7 +62,6 @@ export default function OwnerDetailModal({
           className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <div className="flex items-start gap-4 border-b border-bay/10 p-5">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-bay font-display text-lg font-bold text-white">
               {initials}
@@ -86,7 +85,6 @@ export default function OwnerDetailModal({
             </button>
           </div>
 
-          {/* Scrollable body */}
           <div className="flex-1 space-y-6 overflow-y-auto p-5">
             <section>
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-bay/50">
@@ -153,11 +151,11 @@ export default function OwnerDetailModal({
                         type="button"
                         className="group relative block w-full bg-mist"
                         onClick={() => setPreview(doc)}
-                        aria-label={`Enlarge ${doc.idType}`}
+                        aria-label="Government ID"
                       >
                         <img
                           src={doc.imageUrl}
-                          alt={doc.idType}
+                          alt="Government ID"
                           className="h-44 w-full object-contain"
                         />
                         <span className="absolute inset-0 flex items-center justify-center bg-bay/0 text-xs font-semibold text-white opacity-0 transition group-hover:bg-bay/40 group-hover:opacity-100">
@@ -165,7 +163,7 @@ export default function OwnerDetailModal({
                         </span>
                       </button>
                       <figcaption className="truncate border-t border-bay/10 px-3 py-2 text-xs font-medium">
-                        {doc.idType}
+                        Government ID
                       </figcaption>
                     </figure>
                   ))}
@@ -174,7 +172,6 @@ export default function OwnerDetailModal({
             </section>
           </div>
 
-          {/* Footer */}
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-bay/10 bg-mist/50 px-5 py-4">
             <button type="button" className="btn btn-ghost mr-auto" onClick={onClose}>
               Close
@@ -201,7 +198,6 @@ export default function OwnerDetailModal({
         </div>
       </div>
 
-      {/* Full-size ID viewer */}
       {preview && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
@@ -217,7 +213,7 @@ export default function OwnerDetailModal({
           </button>
           <img
             src={preview.imageUrl}
-            alt={preview.idType}
+            alt="Government ID"
             className="max-h-full max-w-full rounded-md object-contain"
             onClick={(e) => e.stopPropagation()}
           />
